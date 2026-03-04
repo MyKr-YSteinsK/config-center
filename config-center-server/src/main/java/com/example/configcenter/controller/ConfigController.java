@@ -42,4 +42,16 @@ public class ConfigController {
                                              @RequestParam @NotBlank String env) {
         return ApiResponse.ok(service.getOne(app, env, key));
     }
+    @GetMapping("/history")
+    public com.example.configcenter.dto.ApiResponse<java.util.List<com.example.configcenter.dto.response.ConfigHistoryDto>> history(
+            @RequestParam @jakarta.validation.constraints.NotBlank String app,
+            @RequestParam @jakarta.validation.constraints.NotBlank String env,
+            @RequestParam @jakarta.validation.constraints.NotBlank String key) {
+        return com.example.configcenter.dto.ApiResponse.ok(service.history(app, env, key));
+    }
+    @PostMapping("/rollback")
+    public com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigItemDto> rollback(
+            @jakarta.validation.Valid @RequestBody com.example.configcenter.dto.request.RollbackConfigRequest req) {
+        return com.example.configcenter.dto.ApiResponse.ok(service.rollback(req));
+    }
 }

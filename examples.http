@@ -74,3 +74,90 @@ Content-Type: application/json
 
 ### evaluate enabled=false -> false
 GET http://localhost:8080/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u1000
+
+### seed config
+POST http://localhost:8080/api/configs
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "value": "20",
+  "description": "pool size"
+}
+
+### seed feature new-checkout
+POST http://localhost:8080/api/features
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "name": "new-checkout",
+  "enabled": true,
+  "rolloutPercentage": 30,
+  "allowlist": ["u1000", "u2000"]
+}
+
+###  创建 config（operator/reason 可选）
+POST http://localhost:8080/api/configs
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "value": "10",
+  "description": "pool size",
+  "operator": "kr",
+  "reason": "init"
+}
+
+###  更新（带 expectedVersion=1，成功后 version=2）
+POST http://localhost:8080/api/configs
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "value": "20",
+  "description": "pool size v2",
+  "expectedVersion": 1,
+  "operator": "kr",
+  "reason": "tune"
+}
+
+###  故意版本冲突（expectedVersion=1 但当前已经是 2）-> 4091
+POST http://localhost:8080/api/configs
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "value": "999",
+  "expectedVersion": 1,
+  "operator": "kr",
+  "reason": "should fail"
+}
+
+###  查 history
+GET http://localhost:8080/api/configs/history?app=demo-app&env=dev&key=db.pool.size
+
+###  回滚到 version=1（回滚会生成新版本，比如从 2 -> 3）
+POST http://localhost:8080/api/configs/rollback
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "targetVersion": 1,
+  "operator": "kr",
+  "reason": "rollback for demo"
+}
+
+### 再查一次 config，看 version 是否变为 3 且 value 回到 10
+GET http://localhost:8080/api/configs/db.pool.size?app=demo-app&env=dev

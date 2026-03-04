@@ -1,0 +1,6 @@
+demo:
+  baseUrl: http://localhost:8080
+  app: demo-app
+  env: dev
+  featureName: new-checkout
+  userId: u3000

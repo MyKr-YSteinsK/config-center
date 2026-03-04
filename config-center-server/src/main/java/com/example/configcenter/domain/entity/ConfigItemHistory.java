@@ -3,19 +3,14 @@ package com.example.configcenter.domain.entity;
 import jakarta.persistence.*;
 import java.time.Instant;
 
-/**
- * ConfigItem：一条配置记录
- * (app, env, configKey) 唯一，确保同一应用同一环境下同一 key 只有一条配置
- */
 @Entity
-@Table(
-        name = "config_item",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_app_env_key",
-                columnNames = {"app", "env", "config_key"}
-        )
+@Table(name = "config_item_history",
+        indexes = {
+                @Index(name = "idx_cfg_hist_app_env_key", columnList = "app, env, config_key"),
+                @Index(name = "idx_cfg_hist_app_env_key_ver", columnList = "app, env, config_key, version")
+        }
 )
-public class ConfigItem {
+public class ConfigItemHistory {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,19 +32,25 @@ public class ConfigItem {
     private String description;
 
     /**
-     * - 表示配置变更的“代数”
-     * - 客户端未来可用它做缓存更新、回退、审计
+     * 记录当时的业务版本号（与 ConfigItem.version 对齐）
      */
     @Column(nullable = false)
     private long version;
 
-    @Version
-    private long lockVersion;
+    /**
+     * UPSERT / ROLLBACK
+     */
+    @Column(nullable = false, length = 20)
+    private String action;
+
+    @Column(length = 100)
+    private String operator;
+
+    @Column(length = 500)
+    private String reason;
 
     @Column(nullable = false)
-    private Instant updatedAt;
-
-    // ====== Getter/Setter（JPA 需要） ======
+    private Instant createdAt;
 
     public Long getId() { return id; }
 
@@ -71,6 +72,15 @@ public class ConfigItem {
     public long getVersion() { return version; }
     public void setVersion(long version) { this.version = version; }
 
-    public Instant getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public String getAction() { return action; }
+    public void setAction(String action) { this.action = action; }
+
+    public String getOperator() { return operator; }
+    public void setOperator(String operator) { this.operator = operator; }
+
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
+
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }

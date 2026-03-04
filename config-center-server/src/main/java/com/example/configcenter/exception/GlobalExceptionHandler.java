@@ -73,7 +73,16 @@ public class GlobalExceptionHandler {
     public ApiResponse<?> handleConflict(DataIntegrityViolationException e) {
         return ApiResponse.fail(ErrorCode.CONFLICT.code(), "数据冲突（可能是唯一键重复）");
     }
-
+    @ExceptionHandler({
+            org.springframework.orm.ObjectOptimisticLockingFailureException.class,
+            org.springframework.dao.OptimisticLockingFailureException.class
+    })
+    public com.example.configcenter.dto.ApiResponse<?> handleOptimisticLock(Exception e) {
+        return com.example.configcenter.dto.ApiResponse.fail(
+                com.example.configcenter.exception.ErrorCode.CONFLICT.code(),
+                "并发更新冲突（optimistic lock），请重试"
+        );
+    }
     /**
      * 兜底：任何未预期异常
      */
