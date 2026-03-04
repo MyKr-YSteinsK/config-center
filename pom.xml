@@ -1,0 +1,23 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 这个根项目是“聚合 + 统一管理版本”的 parent，所以 packaging 必须是 pom -->
+    <groupId>com.example</groupId>
+    <artifactId>config-center-demo</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>config-center-demo</name>
+
+    <!-- 两个子模块在这里声明 -->
+    <modules>
+        <module>config-center-server</module>
+        <module>demo-client</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+</project>
