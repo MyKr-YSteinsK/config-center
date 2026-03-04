@@ -1,0 +1,76 @@
+### ping（确认服务活着）
+GET http://localhost:8080/api/ping
+
+### upsert config（创建/更新）
+POST http://localhost:8080/api/configs
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "value": "10",
+  "description": "pool size"
+}
+
+### upsert config（更新同 key -> version +1）
+POST http://localhost:8080/api/configs
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "value": "20",
+  "description": "pool size v2"
+}
+
+### list configs
+GET http://localhost:8080/api/configs?app=demo-app&env=dev
+
+### get one config（注意 key 里有点号没问题）
+GET http://localhost:8080/api/configs/db.pool.size?app=demo-app&env=dev
+
+### 缺少参数 env
+GET http://localhost:8080/api/configs?app=demo-app
+
+### 查不存在 key
+GET http://localhost:8080/api/configs/not-exist?app=demo-app&env=dev
+
+### upsert feature
+POST http://localhost:8080/api/features
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "name": "new-checkout",
+  "enabled": true,
+  "rolloutPercentage": 30,
+  "allowlist": ["u1000", "u2000"]
+}
+
+### list features
+GET http://localhost:8080/api/features?app=demo-app&env=dev
+
+### evaluate allowlist hit -> true
+GET http://localhost:8080/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u1000
+
+### evaluate rollout (30%)
+GET http://localhost:8080/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u3000
+
+### disable feature (enabled=false) -> everyone false
+POST http://localhost:8080/api/features
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "name": "new-checkout",
+  "enabled": false,
+  "rolloutPercentage": 100,
+  "allowlist": ["u1000"]
+}
+
+### evaluate enabled=false -> false
+GET http://localhost:8080/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u1000
