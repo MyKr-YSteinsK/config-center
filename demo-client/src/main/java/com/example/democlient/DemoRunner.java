@@ -10,11 +10,11 @@ import org.springframework.stereotype.Component;
 public class DemoRunner implements CommandLineRunner {
 
     private final ReliableHttp http = new ReliableHttp(
-            //超时调小模拟网络拥塞验证
-            //测试得到WARN: network error, retry in 234ms:
-            800,   // connect timeout ms
-            1200,  // read timeout ms
-            new RetryPolicy(3, 200, 2000) // 尝试3次：初始200ms，最多2s
+            800,
+            1200,
+            //超时调小模拟网络拥塞验证，测试得到WARN: network error, retry in 234ms:
+            new RetryPolicy(3, 200, 2000),
+            new CircuitBreaker(2, 5000) // 连续失败2次 -> 打开5秒
     );
     private final ObjectMapper mapper = new ObjectMapper();
 

@@ -24,8 +24,22 @@ public class GlobalExceptionHandler {
      * 业务异常：我们主动抛出的（可控）
      */
     @ExceptionHandler(BizException.class)
-    public ApiResponse<?> handleBiz(BizException e) {
-        return ApiResponse.fail(e.getErrorCode().code(), e.getMessage());
+    public org.springframework.http.ResponseEntity<ApiResponse<?>> handleBiz(BizException e) {
+
+        ErrorCode ec = e.getErrorCode();
+
+        org.springframework.http.HttpStatus status = org.springframework.http.HttpStatus.BAD_REQUEST;
+
+        if (ec == ErrorCode.NOT_FOUND) {
+            status = org.springframework.http.HttpStatus.NOT_FOUND;
+        } else if (ec == ErrorCode.CONFLICT) {
+            status = org.springframework.http.HttpStatus.CONFLICT;
+        } else if (ec == ErrorCode.RATE_LIMIT) {
+            status = org.springframework.http.HttpStatus.TOO_MANY_REQUESTS; // 429
+        }
+
+        ApiResponse<?> body = ApiResponse.fail(ec.getCode(), e.getMessage());
+        return org.springframework.http.ResponseEntity.status(status).body(body);
     }
 
     /**
@@ -37,7 +51,7 @@ public class GlobalExceptionHandler {
         for (FieldError fe : e.getBindingResult().getFieldErrors()) {
             map.put(fe.getField(), fe.getDefaultMessage());
         }
-        ApiResponse<ErrorResponse> resp = ApiResponse.fail(ErrorCode.PARAM_INVALID.code(), "参数校验失败");
+        ApiResponse<ErrorResponse> resp = ApiResponse.fail(ErrorCode.PARAM_INVALID.getCode(), "参数校验失败");
         resp.setData(new ErrorResponse(map));
         return resp;
     }
@@ -47,7 +61,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(ConstraintViolationException.class)
     public ApiResponse<?> handleConstraint(ConstraintViolationException e) {
-        return ApiResponse.fail(ErrorCode.PARAM_INVALID.code(), "请求参数错误：" + e.getMessage());
+        return ApiResponse.fail(ErrorCode.PARAM_INVALID.getCode(), "请求参数错误：" + e.getMessage());
     }
 
     /**
@@ -55,7 +69,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ApiResponse<?> handleMissingParam(MissingServletRequestParameterException e) {
-        return ApiResponse.fail(ErrorCode.PARAM_INVALID.code(), "缺少参数：" + e.getParameterName());
+        return ApiResponse.fail(ErrorCode.PARAM_INVALID.getCode(), "缺少参数：" + e.getParameterName());
     }
 
     /**
@@ -63,7 +77,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ApiResponse<?> handleBadJson(HttpMessageNotReadableException e) {
-        return ApiResponse.fail(ErrorCode.PARAM_INVALID.code(), "请求体 JSON 解析失败");
+        return ApiResponse.fail(ErrorCode.PARAM_INVALID.getCode(), "请求体 JSON 解析失败");
     }
 
     /**
@@ -71,7 +85,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ApiResponse<?> handleConflict(DataIntegrityViolationException e) {
-        return ApiResponse.fail(ErrorCode.CONFLICT.code(), "数据冲突（可能是唯一键重复）");
+        return ApiResponse.fail(ErrorCode.CONFLICT.getCode(), "数据冲突（可能是唯一键重复）");
     }
     @ExceptionHandler({
             org.springframework.orm.ObjectOptimisticLockingFailureException.class,
@@ -79,7 +93,7 @@ public class GlobalExceptionHandler {
     })
     public com.example.configcenter.dto.ApiResponse<?> handleOptimisticLock(Exception e) {
         return com.example.configcenter.dto.ApiResponse.fail(
-                com.example.configcenter.exception.ErrorCode.CONFLICT.code(),
+                com.example.configcenter.exception.ErrorCode.CONFLICT.getCode(),
                 "并发更新冲突（optimistic lock），请重试"
         );
     }
@@ -87,7 +101,15 @@ public class GlobalExceptionHandler {
      * 兜底：任何未预期异常
      */
     @ExceptionHandler(Exception.class)
-    public ApiResponse<?> handleOthers(Exception e) {
-        return ApiResponse.fail(ErrorCode.SYSTEM_ERROR.code(), "系统异常：" + e.getClass().getSimpleName());
+    public org.springframework.http.ResponseEntity<ApiResponse<?>> handleOthers(Exception e) {
+
+        ApiResponse<?> body = ApiResponse.fail(
+                ErrorCode.SYSTEM_ERROR.getCode(),
+                "系统异常：" + e.getClass().getSimpleName()
+        );
+
+        return org.springframework.http.ResponseEntity
+                .status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(body);
     }
 }

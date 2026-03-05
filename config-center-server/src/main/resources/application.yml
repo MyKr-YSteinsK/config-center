@@ -20,3 +20,9 @@ spring:
     console:
       enabled: true
       path: /h2-console
+
+#拉低后测试 code：4290，请求过于频繁，请稍后再试
+rate-limit:
+  enabled: true
+  capacity: 5
+  refill-per-second: 5
