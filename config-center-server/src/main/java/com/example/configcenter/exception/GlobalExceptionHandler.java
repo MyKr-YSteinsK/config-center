@@ -112,4 +112,9 @@ public class GlobalExceptionHandler {
                 .status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(body);
     }
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public org.springframework.http.ResponseEntity<ApiResponse<?>> handleNoResource(org.springframework.web.servlet.resource.NoResourceFoundException e) {
+        ApiResponse<?> body = ApiResponse.fail(ErrorCode.NOT_FOUND.getCode(), "资源不存在：" + e.getResourcePath());
+        return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(body);
+    }
 }

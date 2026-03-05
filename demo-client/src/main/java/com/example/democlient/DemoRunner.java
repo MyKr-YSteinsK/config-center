@@ -36,8 +36,9 @@ public class DemoRunner implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
 
+        int cacheHit = 0;
+        int etagHit304 = 0;
         System.out.println("=== Demo Client ===");
-
         System.out.println("\nFetching configs...");
 
         String url = baseUrl + "/api/configs?app=" + app + "&env=" + env;
@@ -85,5 +86,8 @@ public class DemoRunner implements CommandLineRunner {
         } catch (Exception e) {
             System.out.println("ERROR: evaluate failed: " + e.getMessage());
         }
+
+        System.out.println("\n=== Metrics Summary ===");
+        System.out.println("cacheHit=" + cacheHit + ", etag304=" + etagHit304);
     }
 }

@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RateLimitInterceptor implements HandlerInterceptor {
 
     private final RateLimitProperties props;
+    private static final java.util.concurrent.atomic.LongAdder RATE_LIMIT_BLOCKED = new java.util.concurrent.atomic.LongAdder();
 
     // key: ip + method + uri
     private final ConcurrentHashMap<String, TokenBucket> buckets = new ConcurrentHashMap<>();
@@ -18,7 +19,6 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     public RateLimitInterceptor(RateLimitProperties props) {
         this.props = props;
     }
-
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
 
@@ -38,9 +38,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         );
 
         if (!bucket.tryConsume(1)) {
+            RATE_LIMIT_BLOCKED.increment();
             throw new BizException(ErrorCode.RATE_LIMIT, "请求过于频繁，请稍后再试");
         }
 
         return true;
+    }
+    public static long getBlockedCount() {
+        return RATE_LIMIT_BLOCKED.sum();
     }
 }
