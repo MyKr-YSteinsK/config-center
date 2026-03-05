@@ -4,6 +4,7 @@ import com.example.configcenter.dto.ApiResponse;
 import com.example.configcenter.dto.request.UpsertConfigRequest;
 import com.example.configcenter.dto.response.ConfigItemDto;
 import com.example.configcenter.service.ConfigService;
+import com.example.configcenter.service.ConfigWatchNotifier;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.validation.annotation.Validated;
@@ -17,9 +18,11 @@ import java.util.List;
 public class ConfigController {
 
     private final ConfigService service;
+    private final ConfigWatchNotifier notifier;
 
-    public ConfigController(ConfigService service) {
+    public ConfigController(ConfigService service, ConfigWatchNotifier notifier) {
         this.service = service;
+        this.notifier = notifier;
     }
 
     @PostMapping
@@ -64,5 +67,23 @@ public class ConfigController {
     public com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigItemDto> rollback(
             @jakarta.validation.Valid @RequestBody com.example.configcenter.dto.request.RollbackConfigRequest req) {
         return com.example.configcenter.dto.ApiResponse.ok(service.rollback(req));
+    }
+    @GetMapping("/watch")
+    public org.springframework.web.context.request.async.DeferredResult<com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigWatchDto>> watch(
+            @RequestParam @jakarta.validation.constraints.NotBlank String app,
+            @RequestParam @jakarta.validation.constraints.NotBlank String env,
+            @RequestParam long sinceVersion,
+            @RequestParam(defaultValue = "30") int timeoutSeconds) {
+
+        long latest = service.latestVersion(app, env);
+
+        if (latest > sinceVersion) {
+            // 已经有更新：立刻返回
+            org.springframework.web.context.request.async.DeferredResult<com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigWatchDto>> dr =
+                    new org.springframework.web.context.request.async.DeferredResult<>(0L);
+            dr.setResult(com.example.configcenter.dto.ApiResponse.ok(new com.example.configcenter.dto.response.ConfigWatchDto(true, latest)));
+            return dr;
+        }
+        return notifier.register(app, env, java.time.Duration.ofSeconds(timeoutSeconds), latest);
     }
 }

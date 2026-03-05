@@ -278,3 +278,18 @@ Content-Type: application/json
   "operator": "kr",
   "reason": "invalidate etag demo"
 }
+
+###actuator health
+GET http://localhost:8080/actuator/health
+
+###actuator metrics index
+GET http://localhost:8080/actuator/metrics
+
+### actuator prometheus
+GET http://localhost:8080/actuator/prometheus
+
+###actuator  查指标
+GET http://localhost:8080/actuator/metrics/config_center_rate_limit_blocked_total
+
+### watch configs (long polling)
+GET http://localhost:8080/api/configs/watch?app=demo-app&env=dev&sinceVersion=0&timeoutSeconds=10

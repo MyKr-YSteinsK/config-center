@@ -5,6 +5,7 @@ import com.example.configcenter.dto.request.UpsertConfigRequest;
 import com.example.configcenter.dto.response.ConfigItemDto;
 import com.example.configcenter.repository.ConfigItemRepository;
 import com.example.configcenter.repository.ConfigItemHistoryRepository;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,13 +21,15 @@ public class ConfigService {
 
     private final ConfigItemRepository repo;
     private final ConfigItemHistoryRepository historyRepo;
+    private final ConfigWatchNotifier notifier;
 
-    public ConfigService(ConfigItemRepository repo, ConfigItemHistoryRepository historyRepo) {
+    public ConfigService(ConfigItemRepository repo,
+                         ConfigItemHistoryRepository historyRepo,
+                         ConfigWatchNotifier notifier) {
         this.repo = repo;
         this.historyRepo = historyRepo;
+        this.notifier = notifier;
     }
-
-
     /**
      * upsert：存在则更新，不存在则创建
      * version 规则：
@@ -66,11 +69,19 @@ public class ConfigService {
             log.info("Config upsert(update): app={}, env={}, key={}, newVersion={}",
                     req.getApp(), req.getEnv(), req.getKey(), item.getVersion());
         }
-
         ConfigItem saved = repo.save(item);
         // 审计：把“这个版本的快照”写到 history 表（append-only）
         historyRepo.save(toHistory(saved, "UPSERT", req.getOperator(), req.getReason()));
 
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        long lv = latestVersion(req.getApp(), req.getEnv());
+                        notifier.notifyChanged(req.getApp(), req.getEnv(), lv);
+                    }
+                }
+        );
         return toDto(saved);
     }
 
@@ -167,5 +178,8 @@ public class ConfigService {
                 ))
                 .toList();
     }
-
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public long latestVersion(String app, String env) {
+        return repo.maxVersion(app, env);
+    }
 }
