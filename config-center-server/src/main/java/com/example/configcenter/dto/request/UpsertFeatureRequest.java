@@ -28,6 +28,11 @@ public class UpsertFeatureRequest {
 
     private List<String> allowlist;
 
+    private Long expectedVersion;
+
+    private String operator;
+    private String reason;
+
     public String getApp() { return app; }
     public void setApp(String app) { this.app = app; }
 
@@ -45,4 +50,13 @@ public class UpsertFeatureRequest {
 
     public List<String> getAllowlist() { return allowlist; }
     public void setAllowlist(List<String> allowlist) { this.allowlist = allowlist; }
+
+    public Long getExpectedVersion() { return expectedVersion; }
+    public void setExpectedVersion(Long expectedVersion) { this.expectedVersion = expectedVersion; }
+
+    public String getOperator() { return operator; }
+    public void setOperator(String operator) { this.operator = operator; }
+
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
 }

@@ -160,4 +160,12 @@ public class ConfigService {
                 ))
                 .toList();
     }
+    @Transactional(readOnly = true)
+    public String etagForList(String app, String env) {
+        // 用 key+version 生成稳定签名：只要任何 key 的 version 变化，etag 就会变
+        String sig = repo.findAllByAppAndEnvOrderByConfigKeyAsc(app, env).stream()
+                .map(i -> i.getConfigKey() + ":" + i.getVersion())
+                .reduce("", (a, b) -> a + ";" + b);
+        return EtagUtil.weakEtag(sig);
+    }
 }

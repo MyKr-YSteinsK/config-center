@@ -7,19 +7,14 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * FeatureFlag：特性开关
- * (app, env, name) 唯一：同一应用同一环境下同名 feature 只能一条
- */
 @Entity
-@Table(
-        name = "feature_flag",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_app_env_name",
-                columnNames = {"app", "env", "name"}
-        )
+@Table(name = "feature_flag_history",
+        indexes = {
+                @Index(name = "idx_ff_hist_app_env_name", columnList = "app, env, name"),
+                @Index(name = "idx_ff_hist_app_env_name_ver", columnList = "app, env, name, version")
+        }
 )
-public class FeatureFlag {
+public class FeatureFlagHistory {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -34,42 +29,30 @@ public class FeatureFlag {
     @Column(nullable = false, length = 200)
     private String name;
 
-    /**
-     * 总开关：false 时无条件关闭（优先级最高）
-     */
     @Column(nullable = false)
     private boolean enabled;
 
-    /**
-     * 灰度百分比：0..100
-     */
     @Column(nullable = false)
     private int rolloutPercentage;
 
-    /**
-     * 业务版本：用于审计/回滚/客户端缓存（创建=1，更新=+1）
-     */
-    @Column(nullable = false)
-    private long version;
-
-    /**
-     * 乐观锁版本：用于并发冲突检测（JPA 自动维护）
-     */
-    @Version
-    private long lockVersion;
-
-    /**
-     * allowlist 最简落库方式：存成 JSON 字符串（单列），代码里仍用 List<String>
-     * demo 重点是“规则与分层”，先不拆表。
-     */
     @Convert(converter = StringListJsonConverter.class)
     @Column(name = "allowlist_json", nullable = false, length = 4000)
     private List<String> allowlist = new ArrayList<>();
 
     @Column(nullable = false)
-    private Instant updatedAt;
+    private long version;
 
-    // ===== Getter/Setter =====
+    @Column(nullable = false, length = 20)
+    private String action; // UPSERT / ROLLBACK
+
+    @Column(length = 100)
+    private String operator;
+
+    @Column(length = 500)
+    private String reason;
+
+    @Column(nullable = false)
+    private Instant createdAt;
 
     public Long getId() { return id; }
 
@@ -88,15 +71,23 @@ public class FeatureFlag {
     public int getRolloutPercentage() { return rolloutPercentage; }
     public void setRolloutPercentage(int rolloutPercentage) { this.rolloutPercentage = rolloutPercentage; }
 
-    public long getVersion() { return version; }
-    public void setVersion(long version) { this.version = version; }
-
-
     public List<String> getAllowlist() { return allowlist; }
     public void setAllowlist(List<String> allowlist) {
         this.allowlist = (allowlist == null) ? new ArrayList<>() : allowlist;
     }
 
-    public Instant getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public long getVersion() { return version; }
+    public void setVersion(long version) { this.version = version; }
+
+    public String getAction() { return action; }
+    public void setAction(String action) { this.action = action; }
+
+    public String getOperator() { return operator; }
+    public void setOperator(String operator) { this.operator = operator; }
+
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
+
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }

@@ -41,4 +41,17 @@ public class FeatureController {
                                                    @RequestParam @NotBlank String userId) {
         return ApiResponse.ok(service.evaluate(app, env, name, userId));
     }
+    @GetMapping("/history")
+    public com.example.configcenter.dto.ApiResponse<java.util.List<com.example.configcenter.dto.response.FeatureHistoryDto>> history(
+            @RequestParam @NotBlank String app,
+            @RequestParam @NotBlank String env,
+            @RequestParam @NotBlank String name) {
+        return com.example.configcenter.dto.ApiResponse.ok(service.history(app, env, name));
+    }
+
+    @PostMapping("/rollback")
+    public com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.FeatureFlagDto> rollback(
+            @Valid @RequestBody com.example.configcenter.dto.request.RollbackFeatureRequest req) {
+        return com.example.configcenter.dto.ApiResponse.ok(service.rollback(req));
+    }
 }
