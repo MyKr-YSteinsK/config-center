@@ -161,3 +161,120 @@ Content-Type: application/json
 
 ### 再查一次 config，看 version 是否变为 3 且 value 回到 10
 GET http://localhost:8080/api/configs/db.pool.size?app=demo-app&env=dev
+
+### 创建 feature（version=1）
+POST http://localhost:8080/api/features
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "name": "new-checkout",
+  "enabled": true,
+  "rolloutPercentage": 30,
+  "allowlist": ["u1000", "u2000"],
+  "operator": "kr",
+  "reason": "init",
+  "expectedVersion": null
+}
+
+### 更新 feature（expectedVersion=1 -> 成功，version=2）
+POST http://localhost:8080/api/features
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "name": "new-checkout",
+  "enabled": true,
+  "rolloutPercentage": 80,
+  "allowlist": ["u1000"],
+  "operator": "kr",
+  "reason": "increase rollout",
+  "expectedVersion": 1
+}
+
+### 冲突（expectedVersion=1 但当前是 2）-> 4091
+POST http://localhost:8080/api/features
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "name": "new-checkout",
+  "enabled": false,
+  "rolloutPercentage": 0,
+  "allowlist": [],
+  "operator": "kr",
+  "reason": "should fail",
+  "expectedVersion": 1
+}
+
+### 查 history（应看到 UPSERT v2/v1）
+GET http://localhost:8080/api/features/history?app=demo-app&env=dev&name=new-checkout
+
+### 回滚到 version=1（会生成 version=3，action=ROLLBACK）
+POST http://localhost:8080/api/features/rollback
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "name": "new-checkout",
+  "targetVersion": 1,
+  "operator": "kr",
+  "reason": "rollback for demo"
+}
+
+### 再查 history（应看到 ROLLBACK）
+GET http://localhost:8080/api/features/history?app=demo-app&env=dev&name=new-checkout
+
+### list configs
+GET http://localhost:8080/api/configs?app=demo-app&env=dev
+
+### configs list  If-None-Match 状态码304
+GET http://localhost:8080/api/configs?app=demo-app&env=dev
+If-None-Match: W/"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+### seed config
+POST http://localhost:8080/api/configs
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "value": "20",
+  "description": "pool size",
+  "operator": "kr",
+  "reason": "seed"
+}
+
+### seed feature flag
+POST http://localhost:8080/api/features
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "name": "new-checkout",
+  "enabled": true,
+  "rolloutPercentage": 30,
+  "allowlist": ["u1000", "u2000"],
+  "operator": "kr",
+  "reason": "seed"
+}
+
+### update config to invalidate ETag
+POST http://localhost:8080/api/configs
+Content-Type: application/json
+
+{
+  "app": "demo-app",
+  "env": "dev",
+  "key": "db.pool.size",
+  "value": "30",
+  "description": "pool size v2",
+  "operator": "kr",
+  "reason": "invalidate etag demo"
+}

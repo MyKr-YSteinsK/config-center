@@ -28,9 +28,20 @@ public class ConfigController {
     }
 
     @GetMapping
-    public ApiResponse<List<ConfigItemDto>> list(@RequestParam @NotBlank String app,
-                                                 @RequestParam @NotBlank String env) {
-        return ApiResponse.ok(service.list(app, env));
+    public org.springframework.http.ResponseEntity<?> list(
+            @RequestParam @NotBlank String app,
+            @RequestParam @NotBlank String env,
+            @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch) {
+
+        String etag = service.etagForList(app, env);
+
+        if (ifNoneMatch != null && ifNoneMatch.equals(etag)) {
+            // 304 通常不带 body（节省带宽），但响应头仍会有 traceId（由 Filter 注入）
+            return org.springframework.http.ResponseEntity.status(304).eTag(etag).build();
+        }
+
+        java.util.List<com.example.configcenter.dto.response.ConfigItemDto> data = service.list(app, env);
+        return org.springframework.http.ResponseEntity.ok().eTag(etag).body(com.example.configcenter.dto.ApiResponse.ok(data));
     }
 
     /**
