@@ -5,3 +5,8 @@ demo:
   featureName: new-checkout
   userId: u3000
 
+demo:
+  watch:
+    enabled: true
+    timeoutSeconds: 10
+    rounds: 5
