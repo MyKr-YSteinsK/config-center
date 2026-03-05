@@ -5,12 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
 
 @Component
 public class DemoRunner implements CommandLineRunner {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final ReliableHttp http = new ReliableHttp(
+            //超时调小模拟网络拥塞验证
+            //测试得到WARN: network error, retry in 234ms:
+            800,   // connect timeout ms
+            1200,  // read timeout ms
+            new RetryPolicy(3, 200, 2000) // 尝试3次：初始200ms，最多2s
+    );
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Value("${demo.baseUrl}")
@@ -42,43 +47,26 @@ public class DemoRunner implements CommandLineRunner {
         String cachedEtag = cached == null ? null : cached.etag;
         String cachedBody = cached == null ? null : cached.body;
 
-        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-        if (cachedEtag != null) {
-            // 用最直接的方式设置，避免引号被二次处理导致不匹配
-            headers.set("If-None-Match", cachedEtag);
-        }
-
-        org.springframework.http.HttpEntity<Void> entity = new org.springframework.http.HttpEntity<>(headers);
-        org.springframework.http.ResponseEntity<String> resp =
-                restTemplate.exchange(url, org.springframework.http.HttpMethod.GET, entity, String.class);
-
-        if (resp.getStatusCode().value() == 304) {
-            System.out.println("304 Not Modified -> use cached body");
-
+        org.springframework.http.ResponseEntity<String> resp;
+        try {
+            resp = http.getWithRetry(url, cachedEtag);
+        } catch (Exception e) {
+            // 降级：拉取失败，使用本地缓存继续跑
+            System.out.println("ERROR: fetch configs failed, fallback to cached body: " + e.getMessage());
             if (cachedBody == null) {
-                System.out.println("WARN: got 304 but no cached body, refetch without If-None-Match");
-
-                org.springframework.http.ResponseEntity<String> fresh =
-                        restTemplate.exchange(url, org.springframework.http.HttpMethod.GET,
-                                org.springframework.http.HttpEntity.EMPTY, String.class);
-
-                String body = fresh.getBody();
-                if (body == null) {
-                    throw new IllegalStateException("Refetch returned empty body, cannot recover cache");
-                }
-                String etag = fresh.getHeaders().getETag();
-
-                HttpDiskCache.put(url, etag, body);
-
-                System.out.println(mapper.readTree(body).toPrettyString());
-            } else {
-                System.out.println(mapper.readTree(cachedBody).toPrettyString());
+                throw e; // 没缓存就只能失败（你也可以改成打印并返回）
             }
-
+            System.out.println(mapper.readTree(cachedBody).toPrettyString());
+            resp = null; // 后面不再处理
+        }
+        if (resp == null) {
+            // 已降级输出过
+        } else if (resp.getStatusCode().value() == 304) {
+            System.out.println("304 Not Modified -> use cached body");
+            System.out.println(mapper.readTree(cachedBody).toPrettyString());
         } else {
             String body = resp.getBody();
             String etag = resp.getHeaders().getETag();
-
             if (etag != null && body != null) {
                 HttpDiskCache.put(url, etag, body);
             }
@@ -87,12 +75,15 @@ public class DemoRunner implements CommandLineRunner {
         }
 
         System.out.println("\nEvaluating feature...");
-        String eval = restTemplate.getForObject(
-                baseUrl + "/api/features/evaluate?app=" + app + "&env=" + env
-                        + "&name=" + featureName + "&userId=" + userId,
-                String.class
-        );
-        JsonNode evalNode = mapper.readTree(eval);
-        System.out.println(evalNode.toPrettyString());
+        String evalUrl = baseUrl + "/api/features/evaluate?app=" + app + "&env=" + env
+                + "&name=" + featureName + "&userId=" + userId;
+
+        try {
+            org.springframework.http.ResponseEntity<String> evalResp = http.getWithRetry(evalUrl, null);
+            JsonNode evalNode = mapper.readTree(evalResp.getBody());
+            System.out.println(evalNode.toPrettyString());
+        } catch (Exception e) {
+            System.out.println("ERROR: evaluate failed: " + e.getMessage());
+        }
     }
 }
