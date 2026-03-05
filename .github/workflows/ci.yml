@@ -39,3 +39,6 @@ jobs:
           name: jacoco-report
           path: |
             **/target/site/jacoco/*
+            
+            
+            https://github.com/MyKr-YSteinsK/config-center
