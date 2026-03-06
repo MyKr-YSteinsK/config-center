@@ -1,4 +1,4 @@
-package com.example.configcenter.dto.request;
+﻿package com.example.configcenter.dto.request;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -7,6 +7,10 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.List;
 
+/**
+ * feature 新增/更新请求体。
+ * rolloutPercentage 限定在 0..100，是为了把灰度规则控制在最朴素也最容易解释的范围里。
+ */
 public class UpsertFeatureRequest {
 
     @NotBlank

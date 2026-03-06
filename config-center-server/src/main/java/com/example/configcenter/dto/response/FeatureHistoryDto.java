@@ -1,8 +1,11 @@
-package com.example.configcenter.dto.response;
+﻿package com.example.configcenter.dto.response;
 
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * feature 历史返回对象。
+ */
 public class FeatureHistoryDto {
 
     private String app;

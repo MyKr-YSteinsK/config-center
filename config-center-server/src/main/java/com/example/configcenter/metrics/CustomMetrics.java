@@ -1,10 +1,14 @@
-package com.example.configcenter.metrics;
+﻿package com.example.configcenter.metrics;
 
 import com.example.configcenter.web.RateLimitInterceptor;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
+/**
+ * 自定义指标注册。
+ * 先把限流拦截次数暴露出来，后面无论本地看 actuator 还是接 Prometheus 都有抓手。
+ */
 @Component
 public class CustomMetrics {
 

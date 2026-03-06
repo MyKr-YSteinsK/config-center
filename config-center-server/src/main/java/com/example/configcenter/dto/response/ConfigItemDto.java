@@ -1,7 +1,11 @@
-package com.example.configcenter.dto.response;
+﻿package com.example.configcenter.dto.response;
 
 import java.time.Instant;
 
+/**
+ * 配置项对外展示对象。
+ * 保留 version 和 updatedAt，客户端做缓存、watch 或展示时都能直接拿来用。
+ */
 public class ConfigItemDto {
 
     private String app;

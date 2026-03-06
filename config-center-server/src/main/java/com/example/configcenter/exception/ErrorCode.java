@@ -1,10 +1,8 @@
-package com.example.configcenter.exception;
+﻿package com.example.configcenter.exception;
 
 /**
- * 统一错误码体系：
- * - code=0 成功
- * - 4xxx 参数/资源/冲突类
- * - 5xxx 系统类
+ * 统一错误码体系。
+ * code=0 表示成功，4xxx 更偏调用问题，5xxx 更偏服务自身异常。
  */
 public enum ErrorCode {
 

@@ -1,8 +1,12 @@
-package com.example.configcenter.dto.request;
+﻿package com.example.configcenter.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+/**
+ * 配置回滚请求。
+ * 这里 targetVersion 是想回到哪一版，不是“把当前版本改成几”。
+ */
 public class RollbackConfigRequest {
 
     @NotBlank

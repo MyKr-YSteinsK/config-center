@@ -1,8 +1,11 @@
-package com.example.configcenter.dto.response;
+﻿package com.example.configcenter.dto.response;
 
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * feature 当前状态的返回对象。
+ */
 public class FeatureFlagDto {
 
     private String app;

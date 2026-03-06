@@ -1,5 +1,9 @@
-package com.example.configcenter.dto.response;
+﻿package com.example.configcenter.dto.response;
 
+/**
+ * watch 接口返回值。
+ * changed=false 表示这轮只是超时，没有新变化，不是接口坏了。
+ */
 public class ConfigWatchDto {
     private boolean changed;
     private long latestVersion;

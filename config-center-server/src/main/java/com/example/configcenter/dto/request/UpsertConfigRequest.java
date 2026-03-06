@@ -1,9 +1,10 @@
-package com.example.configcenter.dto.request;
+﻿package com.example.configcenter.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 
 /**
- * Controller 接收的请求体（不要直接用 Entity 当请求体，这是工程习惯）
+ * 配置新增/更新请求体。
+ * 不直接暴露 Entity 给接口层，是个小习惯，但能少很多无意间把内部字段放出去的坑。
  */
 public class UpsertConfigRequest {
 
@@ -21,6 +22,16 @@ public class UpsertConfigRequest {
 
     private String description;
 
+    /**
+     * 并发保护字段。
+     * 调用方如果带了 expectedVersion，服务端就会校验“我准备修改的这份数据还是不是我刚看到的那一版”。
+     */
+    private Long expectedVersion;
+
+    // 审计信息不是强制项，但有了它，历史记录会像人写出来的，而不是只有冷冰冰的一串版本号。
+    private String operator;
+    private String reason;
+
     public String getApp() { return app; }
     public void setApp(String app) { this.app = app; }
 
@@ -35,18 +46,6 @@ public class UpsertConfigRequest {
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
-    /**
-     * 并发安全：
-     * - 如果传了 expectedVersion，服务端会检查“当前 version 是否等于它”
-     * - 不等则返回 409（避免丢更新）
-     */
-    private Long expectedVersion;
-
-    /**
-     * 审计字段（可选，但企业里基本都会要求）
-     */
-    private String operator;
-    private String reason;
 
     public Long getExpectedVersion() { return expectedVersion; }
     public void setExpectedVersion(Long expectedVersion) { this.expectedVersion = expectedVersion; }

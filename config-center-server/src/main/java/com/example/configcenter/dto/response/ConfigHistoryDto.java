@@ -1,7 +1,11 @@
-package com.example.configcenter.dto.response;
+﻿package com.example.configcenter.dto.response;
 
 import java.time.Instant;
 
+/**
+ * 配置历史对外返回对象。
+ * 这里故意把字段铺平，接口使用者看起来会更省脑子。
+ */
 public class ConfigHistoryDto {
     private String app;
     private String env;

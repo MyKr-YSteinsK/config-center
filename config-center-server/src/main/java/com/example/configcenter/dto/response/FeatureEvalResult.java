@@ -1,7 +1,8 @@
-package com.example.configcenter.dto.response;
+﻿package com.example.configcenter.dto.response;
 
 /**
- * evaluate 不仅给 true/false，还解释“为什么”
+ * feature evaluate 的解释型结果。
+ * 不只告诉调用方 true/false，还顺手说清楚这次是怎么判断出来的。
  */
 public class FeatureEvalResult {
 
@@ -9,8 +10,9 @@ public class FeatureEvalResult {
     private String userId;
     private boolean enabled;
 
-    private int bucket;      // 0..99；如果不走灰度（比如 allowlist / enabled=false），用 -1
-    private String decision; // explain
+    // 0..99；如果压根没走灰度，比如总开关关闭或命中白名单，这里就记 -1。
+    private int bucket;
+    private String decision;
 
     public FeatureEvalResult() {}
 

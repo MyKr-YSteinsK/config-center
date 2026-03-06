@@ -1,8 +1,11 @@
-package com.example.configcenter.dto.request;
+﻿package com.example.configcenter.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+/**
+ * feature 回滚请求，结构和配置回滚保持一致，调用体验会更统一。
+ */
 public class RollbackFeatureRequest {
 
     @NotBlank
