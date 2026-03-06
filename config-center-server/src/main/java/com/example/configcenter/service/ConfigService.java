@@ -3,9 +3,8 @@ package com.example.configcenter.service;
 import com.example.configcenter.domain.entity.ConfigItem;
 import com.example.configcenter.dto.request.UpsertConfigRequest;
 import com.example.configcenter.dto.response.ConfigItemDto;
-import com.example.configcenter.repository.ConfigItemRepository;
 import com.example.configcenter.repository.ConfigItemHistoryRepository;
-
+import com.example.configcenter.repository.ConfigItemRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;

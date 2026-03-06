@@ -6,12 +6,12 @@
 
     <parent>
         <groupId>com.example</groupId>
-        <artifactId>config-center-demo</artifactId>
+        <artifactId>config-center</artifactId>
         <version>1.0.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>demo-client</artifactId>
+    <artifactId>config-center-client</artifactId>
 
     <dependencies>
 

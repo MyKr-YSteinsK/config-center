@@ -1,6 +1,7 @@
 package com.example.configcenter.domain.entity;
 
 import jakarta.persistence.*;
+
 import java.time.Instant;
 
 /**
