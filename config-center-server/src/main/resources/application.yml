@@ -40,3 +40,9 @@ management:
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] traceId=%X{traceId} %logger{36} - %msg%n"
+
+security:
+  api-keys:
+    - key: kr-dev-key
+      app: demo-app
+      env: dev

@@ -3,6 +3,9 @@ package com.example.configcenter.controller;
 import com.example.configcenter.dto.ApiResponse;
 import com.example.configcenter.dto.request.UpsertConfigRequest;
 import com.example.configcenter.dto.response.ConfigItemDto;
+import com.example.configcenter.exception.BizException;
+import com.example.configcenter.exception.ErrorCode;
+import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.ConfigService;
 import com.example.configcenter.service.ConfigWatchNotifier;
 import jakarta.validation.Valid;
@@ -13,20 +16,30 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/configs")
+@RequestMapping("/api")
 @Validated
 public class ConfigController {
 
     private final ConfigService service;
     private final ConfigWatchNotifier notifier;
+    private final ApiKeyService apiKeyService;
 
-    public ConfigController(ConfigService service, ConfigWatchNotifier notifier) {
+    public ConfigController(ConfigService service,
+                            ConfigWatchNotifier notifier,
+                            ApiKeyService apiKeyService) {
+
         this.service = service;
         this.notifier = notifier;
+        this.apiKeyService = apiKeyService;
     }
 
-    @PostMapping
-    public ApiResponse<ConfigItemDto> upsert(@Valid @RequestBody UpsertConfigRequest req) {
+    @PostMapping("/configs")
+    public ApiResponse<ConfigItemDto> upsert(
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @Valid @RequestBody UpsertConfigRequest req) {
+        if (!apiKeyService.allow(apiKey, req.getApp(), req.getEnv())) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "API Key 无权限");
+        }
         return ApiResponse.ok(service.upsert(req));
     }
 

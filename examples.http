@@ -265,7 +265,7 @@ Content-Type: application/json
   "reason": "seed"
 }
 
-### update config to invalidate ETag
+### update config to invalidate ETag（无key）（API Key 无权限）
 POST http://localhost:8080/api/configs
 Content-Type: application/json
 
@@ -293,3 +293,17 @@ GET http://localhost:8080/actuator/metrics/config_center_rate_limit_blocked_tota
 
 ### watch configs (long polling)
 GET http://localhost:8080/api/configs/watch?app=demo-app&env=dev&sinceVersion=0&timeoutSeconds=10
+
+
+### 带key验证
+POST http://localhost:8080/api/configs
+X-API-Key: kr-dev-key
+Content-Type: application/json
+
+{
+  "app":"demo-app",
+  "env":"dev",
+  "key":"db.pool.size",
+  "value":"50",
+  "description":"secure update"
+}
