@@ -24,6 +24,7 @@ jobs:
       - name: Build & Test
         run: mvn -q -B clean verify
 
+      # 即使构建失败，也尽量把测试报告和覆盖率报告带出来，方便回看。
       - name: Upload surefire reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -39,6 +40,3 @@ jobs:
           name: jacoco-report
           path: |
             **/target/site/jacoco/*
-            
-            
-            https://github.com/MyKr-YSteinsK/config-center

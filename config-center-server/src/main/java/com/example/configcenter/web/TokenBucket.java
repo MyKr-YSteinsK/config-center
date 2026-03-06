@@ -1,5 +1,9 @@
 package com.example.configcenter.web;
 
+/**
+ * 最基础的令牌桶实现。
+ * 逻辑不复杂，但够用：有令牌就放行，没令牌就拦住，时间过去后再慢慢补回来。
+ */
 public class TokenBucket {
 
     private final long capacity;

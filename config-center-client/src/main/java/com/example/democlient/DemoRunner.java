@@ -12,9 +12,9 @@ public class DemoRunner implements CommandLineRunner {
     private final ReliableHttp http = new ReliableHttp(
             800,
             1200,
-            //超时调小模拟网络拥塞验证，测试得到WARN: network error, retry in 234ms:
+            // 故意把超时设得偏小一点，方便在本地模拟网络抖动和重试。
             new RetryPolicy(3, 200, 2000),
-            new CircuitBreaker(2, 5000) // 连续失败2次 -> 打开5秒
+            new CircuitBreaker(2, 5000)
     );
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -33,6 +33,15 @@ public class DemoRunner implements CommandLineRunner {
     @Value("${demo.userId}")
     private String userId;
 
+    @Value("${demo.watch.enabled:true}")
+    private boolean watchEnabled;
+
+    @Value("${demo.watch.timeoutSeconds:10}")
+    private int timeoutSeconds;
+
+    @Value("${demo.watch.rounds:5}")
+    private int rounds;
+
     @Override
     public void run(String... args) throws Exception {
 
@@ -43,7 +52,7 @@ public class DemoRunner implements CommandLineRunner {
 
         String url = baseUrl + "/api/configs?app=" + app + "&env=" + env;
 
-        // 从落盘缓存读取
+        // 先读磁盘缓存。服务端哪怕短暂不可用，客户端也别直接裸奔报错。
         HttpDiskCache.Entry cached = HttpDiskCache.get(url);
         String cachedEtag = cached == null ? null : cached.etag;
         String cachedBody = cached == null ? null : cached.body;
@@ -52,19 +61,24 @@ public class DemoRunner implements CommandLineRunner {
         try {
             resp = http.getWithRetry(url, cachedEtag);
         } catch (Exception e) {
-            // 降级：拉取失败，使用本地缓存继续跑
             System.out.println("ERROR: fetch configs failed, fallback to cached body: " + e.getMessage());
             if (cachedBody == null) {
-                throw e; // 没缓存就只能失败（你也可以改成打印并返回）
+                throw e;
             }
+            cacheHit++;
             System.out.println(mapper.readTree(cachedBody).toPrettyString());
-            resp = null; // 后面不再处理
+            resp = null;
         }
+
+        String latestBody = cachedBody;
         if (resp == null) {
-            // 已降级输出过
+            // 已经走降级输出，这里不再重复处理。
         } else if (resp.getStatusCode().value() == 304) {
+            etagHit304++;
+            cacheHit++;
             System.out.println("304 Not Modified -> use cached body");
             System.out.println(mapper.readTree(cachedBody).toPrettyString());
+            latestBody = cachedBody;
         } else {
             String body = resp.getBody();
             String etag = resp.getHeaders().getETag();
@@ -73,31 +87,22 @@ public class DemoRunner implements CommandLineRunner {
             }
             System.out.println("200 OK -> cache etag=" + etag);
             System.out.println(mapper.readTree(body).toPrettyString());
+            latestBody = body;
         }
-
-        // ===== Watch loop (long polling) =====
-        boolean watchEnabled = true; // 先写死，后面接 @Value 再接
-        int rounds = 5;
-        int timeoutSeconds = 10;
 
         long sinceVersion = 0;
         try {
-            // 从刚才打印的 configs JSON 中粗暴取一个 sinceVersion：取 data 里最大 version
-            // 你当前 data 是列表结构，每个 item 有 version
-            com.fasterxml.jackson.databind.JsonNode lastBodyNode;
-            if (cachedBody != null) {
-                lastBodyNode = mapper.readTree(cachedBody);
-            } else {
-                // 如果本次是 200，用 resp body；如果你没留变量，就先不做初始化，后面从缓存文件也行
-                lastBodyNode = null;
-            }
+            // 从最新这份配置响应里找最大 version，后面的 watch 就从这里往后等。
+            JsonNode lastBodyNode = latestBody == null ? null : mapper.readTree(latestBody);
             if (lastBodyNode != null && lastBodyNode.has("data") && lastBodyNode.get("data").isArray()) {
-                for (com.fasterxml.jackson.databind.JsonNode item : lastBodyNode.get("data")) {
+                for (JsonNode item : lastBodyNode.get("data")) {
                     long v = item.path("version").asLong(0);
                     sinceVersion = Math.max(sinceVersion, v);
                 }
             }
-        } catch (Exception ignore) {}
+        } catch (Exception ignore) {
+            // 这里只是尽力取 version，取不到也不影响主流程继续跑。
+        }
 
         if (watchEnabled) {
             System.out.println("\nWatching config changes (long polling) ...");
@@ -107,7 +112,7 @@ public class DemoRunner implements CommandLineRunner {
 
                 try {
                     org.springframework.http.ResponseEntity<String> watchResp = http.getWithRetry(watchUrl, null);
-                    com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(watchResp.getBody());
+                    JsonNode node = mapper.readTree(watchResp.getBody());
                     boolean changed = node.path("data").path("changed").asBoolean(false);
                     long latestVersion = node.path("data").path("latestVersion").asLong(sinceVersion);
 
@@ -115,11 +120,8 @@ public class DemoRunner implements CommandLineRunner {
 
                     if (changed) {
                         sinceVersion = latestVersion;
-                        // 发生变更 -> 再拉一次 configs（会走 ETag/304/降级链路）
                         System.out.println("change detected -> refetch configs");
-                        // 直接复用你上面那段“Fetching configs...”逻辑（下一步我们会把它抽函数）
                     }
-
                 } catch (Exception e) {
                     System.out.println("WARN: watch failed: " + e.getMessage());
                 }

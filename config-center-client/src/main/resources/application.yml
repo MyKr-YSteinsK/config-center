@@ -4,8 +4,6 @@ demo:
   env: dev
   featureName: new-checkout
   userId: u3000
-
-demo:
   watch:
     enabled: true
     timeoutSeconds: 10

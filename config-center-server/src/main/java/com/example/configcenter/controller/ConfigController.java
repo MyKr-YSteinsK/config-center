@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.controller;
+package com.example.configcenter.controller;
 
 import com.example.configcenter.dto.ApiResponse;
 import com.example.configcenter.dto.request.UpsertConfigRequest;

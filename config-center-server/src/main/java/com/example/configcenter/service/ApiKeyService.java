@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.service;
+package com.example.configcenter.service;
 
 import com.example.configcenter.config.ApiKeyProperties;
 import org.springframework.stereotype.Service;

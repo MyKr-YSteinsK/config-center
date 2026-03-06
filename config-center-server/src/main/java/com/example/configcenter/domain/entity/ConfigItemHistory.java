@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.domain.entity;
+package com.example.configcenter.domain.entity;
 
 import jakarta.persistence.*;
 

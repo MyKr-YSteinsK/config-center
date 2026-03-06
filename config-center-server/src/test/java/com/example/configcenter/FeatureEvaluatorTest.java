@@ -47,12 +47,12 @@ public class FeatureEvaluatorTest {
 
     @Test
     void differentUsers_haveDiversityInBuckets() {
-        // 不断言“必然不同”，只要分布有一定多样性即可
+        // 这里不要求每个人都一定不同，只要分桶别全挤在几个值上就行。
         List<Integer> buckets = new ArrayList<>();
         for (int i = 0; i < 50; i++) {
             buckets.add(evaluator.stableBucket("u" + i, "feature-z"));
         }
         long unique = buckets.stream().distinct().count();
-        assertTrue(unique > 10, "bucket 分布应具有一定多样性");
+        assertTrue(unique > 10, "bucket 分布应该有基本的离散度");
     }
 }

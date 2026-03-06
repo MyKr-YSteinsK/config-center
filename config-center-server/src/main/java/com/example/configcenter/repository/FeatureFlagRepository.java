@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.repository;
+package com.example.configcenter.repository;
 
 import com.example.configcenter.domain.entity.FeatureFlag;
 import org.springframework.data.jpa.repository.JpaRepository;

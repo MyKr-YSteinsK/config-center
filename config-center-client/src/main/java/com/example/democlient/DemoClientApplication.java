@@ -9,7 +9,8 @@ public class DemoClientApplication {
 
     public static void main(String[] args) {
         SpringApplication app = new SpringApplication(DemoClientApplication.class);
-        app.setWebApplicationType(WebApplicationType.NONE); // 关键：不启动 Web Server，只跑 CLI
+        // 这个客户端就是个 CLI，不需要为了演示去多开一个 Web Server。
+        app.setWebApplicationType(WebApplicationType.NONE);
         app.run(args);
     }
 }

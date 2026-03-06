@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.exception;
+package com.example.configcenter.exception;
 
 /**
  * 业务异常。

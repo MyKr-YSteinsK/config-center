@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.dto.response;
+package com.example.configcenter.dto.response;
 
 /**
  * feature evaluate 的解释型结果。

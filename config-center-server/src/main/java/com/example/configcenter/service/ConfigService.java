@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.service;
+package com.example.configcenter.service;
 
 import com.example.configcenter.domain.entity.ConfigItem;
 import com.example.configcenter.dto.request.UpsertConfigRequest;

@@ -8,6 +8,10 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+/**
+ * 带超时、重试和断路器的 HTTP 拉取器。
+ * 这个类基本就是客户端可靠性演示的核心。
+ */
 public class ReliableHttp {
 
     private final RestTemplate restTemplate;
@@ -23,8 +27,8 @@ public class ReliableHttp {
 
         this.restTemplate.setErrorHandler(new org.springframework.web.client.DefaultResponseErrorHandler() {
             @Override
-            public boolean hasError(org.springframework.http.client.ClientHttpResponse response) throws java.io.IOException {
-                return false; // 任何状态码都不当成异常抛出
+            public boolean hasError(org.springframework.http.client.ClientHttpResponse response) {
+                return false;
             }
         });
         this.retryPolicy = retryPolicy;
@@ -32,14 +36,13 @@ public class ReliableHttp {
     }
 
     /**
-     * GET JSON (string) with optional If-None-Match.
-     * - 成功：返回 ResponseEntity（200 或 304）
-     * - 失败：按策略重试；最终失败抛异常
+     * 读取字符串响应，支持可选的 If-None-Match。
      */
     public ResponseEntity<String> getWithRetry(String url, String ifNoneMatch) throws InterruptedException {
         if (!breaker.allowRequest()) {
             throw new IllegalStateException("CIRCUIT_OPEN: " + breaker.snapshot());
         }
+
         HttpHeaders headers = new HttpHeaders();
         if (ifNoneMatch != null) {
             headers.set("If-None-Match", ifNoneMatch);
@@ -51,19 +54,21 @@ public class ReliableHttp {
         for (int attempt = 1; attempt <= retryPolicy.getMaxAttempts(); attempt++) {
             try {
                 ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-
                 int code = resp.getStatusCode().value();
-                // 200/304：成功，关闭熔断趋势
+
+                // 200 / 304 都算成功，说明服务端是正常响应的。
                 if (code == 200 || code == 304) {
                     breaker.recordSuccess();
                     return resp;
                 }
-                // 429：过载，记失败 + 不重试（避免越打越爆）
+
+                // 429 时别硬顶着重试，不然越限流越打爆。
                 if (code == 429) {
                     breaker.recordFailure();
                     throw new IllegalStateException("HTTP_429_TOO_MANY_REQUESTS");
                 }
-                // 5xx：服务端故障，记失败 + 按策略重试
+
+                // 5xx 认为是服务端暂时不稳，可以按策略试几次。
                 if (code >= 500 && code <= 599) {
                     breaker.recordFailure();
                     if (attempt < retryPolicy.getMaxAttempts()) {
@@ -72,13 +77,14 @@ public class ReliableHttp {
                         Thread.sleep(sleep);
                         continue;
                     }
-                    return resp; // 返回给调用方决定怎么处理
+                    return resp;
                 }
-                // 其他 4xx（比如 404）：不重试，也不记熔断失败（这是请求问题）
+
+                // 其他 4xx 更像请求本身有问题，不适合盲目重试。
                 return resp;
             } catch (ResourceAccessException e) {
-                // 超时/连接失败通常走这里
                 last = e;
+                breaker.recordFailure();
                 if (attempt < retryPolicy.getMaxAttempts()) {
                     long sleep = retryPolicy.backoffWithJitter(attempt);
                     System.out.println("WARN: network error, retry in " + sleep + "ms: " + e.getMessage());
@@ -88,6 +94,9 @@ public class ReliableHttp {
                 throw e;
             } catch (Exception e) {
                 last = e;
+                if (!(e instanceof IllegalStateException state && state.getMessage() != null && state.getMessage().startsWith("HTTP_429"))) {
+                    breaker.recordFailure();
+                }
                 if (attempt < retryPolicy.getMaxAttempts()) {
                     long sleep = retryPolicy.backoffWithJitter(attempt);
                     System.out.println("WARN: unexpected error, retry in " + sleep + "ms: " + e.getMessage());
@@ -98,7 +107,6 @@ public class ReliableHttp {
             }
         }
 
-        // 理论上到不了
         throw new IllegalStateException("Request failed", last);
     }
 }

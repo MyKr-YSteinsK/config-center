@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.dto;
+package com.example.configcenter.dto;
 
 import org.slf4j.MDC;
 

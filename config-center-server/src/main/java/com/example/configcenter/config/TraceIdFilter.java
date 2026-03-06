@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.config;
+package com.example.configcenter.config;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

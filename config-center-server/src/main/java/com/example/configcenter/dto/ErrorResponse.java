@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.dto;
+package com.example.configcenter.dto;
 
 import java.util.Map;
 

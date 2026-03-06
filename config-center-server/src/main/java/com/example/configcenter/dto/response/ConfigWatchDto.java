@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.dto.response;
+package com.example.configcenter.dto.response;
 
 /**
  * watch 接口返回值。

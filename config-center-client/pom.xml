@@ -14,14 +14,11 @@
     <artifactId>config-center-client</artifactId>
 
     <dependencies>
-
-        <!-- 用来发 HTTP 请求 -->
+        <!-- 客户端这里只需要发 HTTP 请求，直接带 web starter 就够演示完整链路了。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-
-
     </dependencies>
 
 </project>

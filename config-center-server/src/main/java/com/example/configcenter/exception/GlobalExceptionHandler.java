@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.exception;
+package com.example.configcenter.exception;
 
 import com.example.configcenter.dto.ApiResponse;
 import com.example.configcenter.dto.ErrorResponse;

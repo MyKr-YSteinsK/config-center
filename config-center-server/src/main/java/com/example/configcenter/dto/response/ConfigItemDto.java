@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.dto.response;
+package com.example.configcenter.dto.response;
 
 import java.time.Instant;
 

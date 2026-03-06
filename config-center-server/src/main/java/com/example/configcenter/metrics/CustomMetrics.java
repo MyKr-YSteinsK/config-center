@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.metrics;
+package com.example.configcenter.metrics;
 
 import com.example.configcenter.web.RateLimitInterceptor;
 import io.micrometer.core.instrument.Gauge;

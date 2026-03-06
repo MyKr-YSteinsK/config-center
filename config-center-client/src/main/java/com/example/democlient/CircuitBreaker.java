@@ -1,5 +1,9 @@
 package com.example.democlient;
 
+/**
+ * 一个很轻量的断路器。
+ * 目的不是做成 Hystrix 替代品，而是让客户端遇到连续失败时别一头猛撞服务端。
+ */
 public class CircuitBreaker {
 
     enum State { CLOSED, OPEN, HALF_OPEN }
@@ -31,7 +35,7 @@ public class CircuitBreaker {
             }
         }
 
-        // HALF_OPEN：只允许 1 个探测请求
+        // HALF_OPEN 只放一个探测请求过去，先看看服务是不是缓过来了。
         if (state == State.HALF_OPEN) {
             if (halfOpenInFlight) return false;
             halfOpenInFlight = true;
@@ -46,9 +50,6 @@ public class CircuitBreaker {
         if (state == State.HALF_OPEN) {
             state = State.CLOSED;
             halfOpenInFlight = false;
-        }
-        if (state == State.CLOSED) {
-            // keep closed
         }
     }
 

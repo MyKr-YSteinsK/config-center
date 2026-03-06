@@ -2,13 +2,14 @@ package com.example.configcenter.web;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * 限流配置项。
+ */
 @ConfigurationProperties(prefix = "rate-limit")
 public class RateLimitProperties {
 
     private boolean enabled = true;
-
     private long capacity = 5;
-
     private double refillPerSecond = 5.0;
 
     public boolean isEnabled() { return enabled; }

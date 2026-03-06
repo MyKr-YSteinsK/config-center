@@ -9,11 +9,15 @@ import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 一个很朴素的磁盘缓存。
+ * CLI 程序每次跑完都会退出，所以只做内存缓存意义不大，干脆直接落盘。
+ */
 public class HttpDiskCache {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    // 缓存文件：放到用户目录下，避免污染项目目录
+    // 放到用户目录下，项目删了重新拉也不影响缓存文件继续复用。
     private static final Path FILE = Paths.get(System.getProperty("user.home"), ".config-center-demo-client-cache.json");
 
     private static final Map<String, Entry> CACHE = new ConcurrentHashMap<>();
@@ -55,7 +59,7 @@ public class HttpDiskCache {
             CACHE.clear();
             CACHE.putAll(m);
         } catch (Exception e) {
-            // 缓存坏了也不能影响 demo-client 正常跑
+            // 缓存坏了也别拖垮主流程，最多就是这次重新拉一遍。
             System.out.println("WARN: failed to load cache file: " + e.getMessage());
         }
     }

@@ -10,6 +10,10 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+/**
+ * watch 长轮询的等待队列。
+ * 谁在等配置变更，就先把 DeferredResult 挂在这里，等配置提交成功后统一唤醒。
+ */
 @Component
 public class ConfigWatchNotifier {
 
@@ -23,7 +27,7 @@ public class ConfigWatchNotifier {
     public DeferredResult<ApiResponse<ConfigWatchDto>> register(String app, String env, Duration timeout, long latestVersion) {
         DeferredResult<ApiResponse<ConfigWatchDto>> dr = new DeferredResult<>(timeout.toMillis());
 
-        // 超时：返回 changed=false（保持统一响应结构，不用 204）
+        // 超时不算异常，明确回一个 changed=false，客户端就知道这轮只是“没等到新消息”。
         dr.onTimeout(() -> dr.setResult(ApiResponse.ok(new ConfigWatchDto(false, latestVersion))));
         dr.onCompletion(() -> {
             List<DeferredResult<ApiResponse<ConfigWatchDto>>> list = waits.get(key(app, env));

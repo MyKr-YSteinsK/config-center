@@ -1,4 +1,4 @@
-﻿package com.example.configcenter.domain.entity;
+package com.example.configcenter.domain.entity;
 
 import com.example.configcenter.domain.converter.StringListJsonConverter;
 import jakarta.persistence.*;
