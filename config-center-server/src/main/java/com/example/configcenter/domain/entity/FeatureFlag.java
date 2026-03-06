@@ -1,4 +1,4 @@
-package com.example.configcenter.domain.entity;
+﻿package com.example.configcenter.domain.entity;
 
 import com.example.configcenter.domain.converter.StringListJsonConverter;
 import jakarta.persistence.*;
@@ -8,8 +8,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * FeatureFlag：特性开关
- * (app, env, name) 唯一：同一应用同一环境下同名 feature 只能一条
+ * 一条 feature flag 的当前状态。
+ * (app, env, name) 唯一，避免同一个功能开关被重复定义得乱七八糟。
  */
 @Entity
 @Table(
@@ -34,33 +34,24 @@ public class FeatureFlag {
     @Column(nullable = false, length = 200)
     private String name;
 
-    /**
-     * 总开关：false 时无条件关闭（优先级最高）
-     */
+    // 总开关，false 时直接短路，灰度和白名单都不用往下看了。
     @Column(nullable = false)
     private boolean enabled;
 
-    /**
-     * 灰度百分比：0..100
-     */
+    // 灰度百分比，0 到 100。
     @Column(nullable = false)
     private int rolloutPercentage;
 
-    /**
-     * 业务版本：用于审计/回滚/客户端缓存（创建=1，更新=+1）
-     */
+    // 业务版本号，和配置项一样，支撑历史、回滚、并发校验这些能力。
     @Column(nullable = false)
     private long version;
 
-    /**
-     * 乐观锁版本：用于并发冲突检测（JPA 自动维护）
-     */
     @Version
     private long lockVersion;
 
     /**
-     * allowlist 最简落库方式：存成 JSON 字符串（单列），代码里仍用 List<String>
-     * demo 重点是“规则与分层”，先不拆表。
+     * allowlist 先存成 JSON 字符串，代码里继续用 List<String>。
+     * 这样可读性够好，也不会把 demo 的注意力全拖去关系表设计上。
      */
     @Convert(converter = StringListJsonConverter.class)
     @Column(name = "allowlist_json", nullable = false, length = 4000)
@@ -68,8 +59,6 @@ public class FeatureFlag {
 
     @Column(nullable = false)
     private Instant updatedAt;
-
-    // ===== Getter/Setter =====
 
     public Long getId() { return id; }
 
@@ -90,7 +79,6 @@ public class FeatureFlag {
 
     public long getVersion() { return version; }
     public void setVersion(long version) { this.version = version; }
-
 
     public List<String> getAllowlist() { return allowlist; }
     public void setAllowlist(List<String> allowlist) {

@@ -1,4 +1,4 @@
-package com.example.configcenter.domain.entity;
+﻿package com.example.configcenter.domain.entity;
 
 import com.example.configcenter.domain.converter.StringListJsonConverter;
 import jakarta.persistence.*;
@@ -7,6 +7,10 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * feature flag 的历史快照。
+ * 这里保留每次修改后的完整样子，后面想回滚、排查“为什么这个人命中了灰度”时都更有底。
+ */
 @Entity
 @Table(name = "feature_flag_history",
         indexes = {
@@ -43,7 +47,7 @@ public class FeatureFlagHistory {
     private long version;
 
     @Column(nullable = false, length = 20)
-    private String action; // UPSERT / ROLLBACK
+    private String action;
 
     @Column(length = 100)
     private String operator;

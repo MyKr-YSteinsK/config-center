@@ -1,4 +1,4 @@
-package com.example.configcenter.config;
+﻿package com.example.configcenter.config;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -12,12 +12,8 @@ import java.io.IOException;
 import java.util.UUID;
 
 /**
- * 作用：给每个请求一个 traceId（请求链路标识）
- * - 放进日志 MDC：日志里可以打印 traceId
- * - 放进响应头：X-Trace-Id
- *
- * 为什么要做这个？
- * 老师看到 traceId，基本就知道你有“可观测性意识”（分布式系统里非常重要）。
+ * 每个请求都挂一个 traceId，方便日志和响应头互相对上号。
+ * 小项目里可能觉得它没那么刚需，但一旦接口多了，它能少掉很多“到底是哪次请求炸了”的时间。
  */
 @Component
 public class TraceIdFilter extends OncePerRequestFilter {

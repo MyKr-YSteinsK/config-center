@@ -1,4 +1,4 @@
-package com.example.configcenter.config;
+﻿package com.example.configcenter.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -10,6 +10,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "security")
 public class ApiKeyProperties {
 
+    // 这里直接把 yml 里的 security.api-keys 绑定成列表，后面鉴权时查起来很顺手。
     private List<ApiKeyItem> apiKeys = new ArrayList<>();
 
     public List<ApiKeyItem> getApiKeys() {
@@ -22,6 +23,7 @@ public class ApiKeyProperties {
 
     public static class ApiKeyItem {
 
+        // 真实项目里当然不会明文放配置，这里为了 demo 先把完整链路走通。
         private String key;
         private String app;
         private String env;

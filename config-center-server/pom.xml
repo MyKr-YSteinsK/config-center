@@ -1,4 +1,4 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
+﻿<project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
@@ -15,49 +15,51 @@
     <packaging>jar</packaging>
 
     <dependencies>
-        <!-- Web：提供 REST 能力（后面写 Controller 要用） -->
+        <!-- Web 能力，Controller、JSON 序列化、内嵌 Tomcat 都靠它。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Validation：后面做参数校验（@NotBlank / @Min/@Max） -->
+        <!-- 参数校验专用，请求体里的 @NotBlank / @Min / @Max 都从这里生效。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- JPA：后面做 ConfigItem/FeatureFlag 的 ORM -->
+        <!-- JPA 负责把实体和表映射起来，省掉一堆样板 SQL。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
-        <!-- H2：内嵌数据库（runtime） -->
+        <!-- H2 让项目开箱即跑，先把机制讲透，比先搭外部数据库更划算。 -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Swagger UI（OpenAPI） -->
+        <!-- Swagger UI，调接口时比纯手写 curl 更顺手。 -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
 
-        <!-- 测试 -->
+        <!-- 测试依赖，JUnit、AssertJ、Spring Test 都在里面。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
 
+        <!-- Actuator 提供 health / metrics / prometheus 这些运维入口。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- 把指标导出成 Prometheus 能直接抓的格式。 -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>

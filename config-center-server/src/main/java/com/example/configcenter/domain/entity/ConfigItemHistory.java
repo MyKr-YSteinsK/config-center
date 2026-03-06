@@ -1,9 +1,13 @@
-package com.example.configcenter.domain.entity;
+﻿package com.example.configcenter.domain.entity;
 
 import jakarta.persistence.*;
 
 import java.time.Instant;
 
+/**
+ * 配置历史快照表。
+ * 当前表负责“现在是什么”，这个表负责“之前发生过什么”，两者分开后回滚和审计都会轻松很多。
+ */
 @Entity
 @Table(name = "config_item_history",
         indexes = {
@@ -32,15 +36,11 @@ public class ConfigItemHistory {
     @Column(length = 500)
     private String description;
 
-    /**
-     * 记录当时的业务版本号（与 ConfigItem.version 对齐）
-     */
+    // 记录的是当时那一版的业务版本号，要和 ConfigItem.version 对得上。
     @Column(nullable = false)
     private long version;
 
-    /**
-     * UPSERT / ROLLBACK
-     */
+    // UPSERT / ROLLBACK，用来标记这次历史是正常修改还是回滚生成的。
     @Column(nullable = false, length = 20)
     private String action;
 

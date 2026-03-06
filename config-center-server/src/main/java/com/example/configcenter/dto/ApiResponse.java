@@ -1,13 +1,10 @@
-package com.example.configcenter.dto;
+﻿package com.example.configcenter.dto;
 
 import org.slf4j.MDC;
 
 /**
- * 统一返回结构：
- * 成功：code=0
- * 失败：code!=0
- *
- * traceId 从 MDC 里拿（由 TraceIdFilter 写入）
+ * 统一响应外壳。
+ * 成功和失败都走它，前端或调用方就不用一会儿猜这个接口返回 data，一会儿又猜它是不是直接丢字符串。
  */
 public class ApiResponse<T> {
 

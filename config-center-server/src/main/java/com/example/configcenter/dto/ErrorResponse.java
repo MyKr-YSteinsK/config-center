@@ -1,10 +1,10 @@
-package com.example.configcenter.dto;
+﻿package com.example.configcenter.dto;
 
 import java.util.Map;
 
 /**
- * 用于承载字段级错误（field -> message）
- * 让调用者能明确知道是哪个字段不对
+ * 字段级错误载体。
+ * 比起一股脑回一句“参数错了”，把具体字段点出来，调接口的人会少很多猜测。
  */
 public class ErrorResponse {
 

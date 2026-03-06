@@ -1,12 +1,12 @@
-package com.example.configcenter.domain.entity;
+﻿package com.example.configcenter.domain.entity;
 
 import jakarta.persistence.*;
 
 import java.time.Instant;
 
 /**
- * ConfigItem：一条配置记录
- * (app, env, configKey) 唯一，确保同一应用同一环境下同一 key 只有一条配置
+ * 一条真实生效中的配置项。
+ * (app, env, configKey) 唯一，保证同一个应用同一个环境下同一个 key 只有一份当前值。
  */
 @Entity
 @Table(
@@ -38,19 +38,18 @@ public class ConfigItem {
     private String description;
 
     /**
-     * - 表示配置变更的“代数”
-     * - 客户端未来可用它做缓存更新、回退、审计
+     * 业务版本号，不是数据库主键。
+     * 它会贯穿 ETag、回滚、历史审计、watch 等链路，算是这套 demo 的主心骨之一。
      */
     @Column(nullable = false)
     private long version;
 
+    // JPA 的乐观锁版本，主要防并发写冲突。
     @Version
     private long lockVersion;
 
     @Column(nullable = false)
     private Instant updatedAt;
-
-    // ====== Getter/Setter（JPA 需要） ======
 
     public Long getId() { return id; }
 

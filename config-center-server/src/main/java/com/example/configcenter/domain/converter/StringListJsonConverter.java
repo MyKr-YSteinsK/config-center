@@ -1,4 +1,4 @@
-package com.example.configcenter.domain.converter;
+﻿package com.example.configcenter.domain.converter;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,12 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * List<String> <-> JSON 字符串
- *
- * 为什么用 Converter：
- * - 实体字段保持 List<String> 可读性
- * - 数据库只用一列，demo 简洁
- * - 未来要升级（拆表/规则引擎）也容易迁移
+ * 把 List<String> 和 JSON 字符串互转。
+ * 这里没有一开始就拆独立表，是 MyKr 有意做的取舍：先把功能规则跑顺，再谈模型复杂度。
  */
 @Converter
 public class StringListJsonConverter implements AttributeConverter<List<String>, String> {
