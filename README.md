@@ -177,37 +177,40 @@ config-center/
 
 ```mermaid
 flowchart LR
-    A[配置/特性管理请求<br/>examples.http / Swagger] --> B[config-center-server]
-    C[业务客户端<br/>demo-client] --> B
+    A[配置管理<br/>examples.http / Swagger]
+    B[config-center-server]
+    C[业务服务 / 客户端<br/>config-client]
 
-    subgraph Server[config-center-server]
-        B1[Controller]
-        B2[Service]
-        B3[Repository]
-        B4[(H2 Database)]
-        B5[TraceId / Exception / RateLimit]
-        B6[Actuator / Metrics / Prometheus]
+    subgraph ServerSide[服务端内部]
+        direction TB
+        S1[Controller]
+        S2[Service]
+        S3[Repository]
+        S4[(H2 Database)]
+        S5[TraceId / Exception / RateLimit]
+        S6[Actuator / Metrics / Prometheus]
+        S1 --> S2
+        S2 --> S3
+        S3 --> S4
+        S1 --> S5
+        S2 --> S6
     end
 
-    B1 --> B2
-    B2 --> B3
-    B3 --> B4
-    B1 --> B5
-    B2 --> B6
-
-    subgraph Client[config-center-client]
+    subgraph ClientSide[客户端能力]
+        direction TB
         C1[ETag / If-None-Match]
         C2[磁盘缓存]
-        C3[超时 + 重试 + 退避]
+        C3[重试 / 退避]
         C4[降级 / 熔断]
         C5[Watch 长轮询]
     end
 
+    A --> B
     C --> C1
-    C --> C2
-    C --> C3
-    C --> C4
-    C --> C5
+    C1 --> B
+    C5 --> B
+    B -.对应实现.-> ServerSide
+    C -.内置能力.-> ClientSide
 ```
 
 ### 6.2 配置更新与监听流程
