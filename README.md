@@ -444,7 +444,7 @@ http://localhost:8080/actuator/prometheus
 ### 运行方式
 
 ```bash
-mvn -pl demo-client spring-boot:run
+mvn -pl config-center-client spring-boot:run
 ```
 
 ### 本地缓存文件
