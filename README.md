@@ -220,37 +220,39 @@ sequenceDiagram
     participant Admin as 管理端
     participant Server as config-center-server
     participant DB as H2
-    participant Watcher as watch请求
+    participant Watcher as 长轮询客户端
 
     Watcher->>Server: GET /api/configs/watch?sinceVersion=1
-    Note right of Server: 暂时挂起等待
+    Note over Server: 挂起请求，等待配置变更或超时
 
     Admin->>Server: POST /api/configs
-    Server->>DB: 保存新配置(version+1)
-    Server->>DB: 写入history
-    Server-->>Watcher: changed=true, latestVersion=2
+    Server->>DB: 保存配置（version + 1）
+    Server->>DB: 写入历史记录
+    Note over Server: 事务提交后触发通知
+    Server-->>Watcher: changed = true<br/>latestVersion = 2
 ```
 
 ### 6.3 客户端拉取流程
 
 ```mermaid
 sequenceDiagram
-    participant Client as config-center-client
+    participant Client as config-client
     participant Cache as 本地磁盘缓存
     participant Server as config-center-server
 
-    Client->>Cache: 读取上次缓存(etag, body)
+    Client->>Cache: 读取本地缓存（etag, body）
     Client->>Server: GET /api/configs + If-None-Match
+
     alt 配置未变化
         Server-->>Client: 304 Not Modified
-        Client->>Cache: 使用本地缓存body
+        Client->>Cache: 直接使用缓存数据
     else 配置已变化
-        Server-->>Client: 200 + 新ETag + 新body
-        Client->>Cache: 更新缓存
+        Server-->>Client: 200 + 新 ETag + 新 Body
+        Client->>Cache: 更新本地缓存
     end
 
-    alt 服务端不可用 / 网络失败
-        Client->>Cache: 降级使用旧缓存
+    alt 服务端不可用 / 网络异常
+        Client->>Cache: 降级读取旧缓存
     end
 ```
 
