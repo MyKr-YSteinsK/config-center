@@ -4,7 +4,11 @@ demo:
   env: dev
   featureName: new-checkout
   userId: u3000
+  http:
+    connectTimeoutMs: 800
+    readTimeoutMs: 3000
   watch:
     enabled: true
     timeoutSeconds: 10
+    readTimeoutMarginMs: 2000
     rounds: 5

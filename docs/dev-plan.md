@@ -178,7 +178,7 @@ Do not add Redis, message queues, or distributed coordination in this phase.
 
 ---
 
-## Phase 3 — Client reliability path closure
+## Phase 3 — Client reliability path closure `[x]`
 
 Goal: make the client behavior match the capabilities described by the project.
 
@@ -192,21 +192,21 @@ Goal: make the client behavior match the capabilities described by the project.
 
 ### Tasks
 
-- [ ] Separate standard request timeout from watch timeout.
-- [ ] Guarantee client read timeout is greater than server long-poll timeout with explicit margin.
-- [ ] Extract reusable configuration fetch logic.
-- [ ] Refetch and persist the latest config after `changed=true`.
-- [ ] Define response handling:
+- [x] Separate standard request timeout from watch timeout.
+- [x] Guarantee client read timeout is greater than server long-poll timeout with explicit margin.
+- [x] Extract reusable configuration fetch logic.
+- [x] Refetch and persist the latest config after `changed=true`.
+- [x] Define response handling:
   - 200 -> accept and cache
   - 304 -> require valid cache
   - 400/403/404 -> fail without retry
   - 429 -> do not immediately retry
   - 5xx/network failure -> retry according to policy, then fallback when cache exists
-- [ ] Avoid treating an error response as a successful config body.
-- [ ] Make HTTP behavior injectable or otherwise deterministic for unit tests.
-- [ ] Add tests for ETag, cache fallback, retry count, 429, 5xx, watch timeout, and refetch.
-- [ ] Rename the cache file to `.config-center-client-cache.json` with a deliberate backward-compatibility decision.
-- [ ] Decide whether package rename from `com.example.democlient` is worth a dedicated cleanup patch.
+- [x] Avoid treating an error response as a successful config body.
+- [x] Make HTTP behavior injectable or otherwise deterministic for unit tests.
+- [x] Add tests for ETag, cache fallback, retry count, 429, 5xx, watch timeout, and refetch.
+- [x] Rename the cache file to `.config-center-client-cache.json` with one-time fallback migration from the legacy file.
+- [x] Keep `com.example.democlient` unchanged and defer any package rename to a dedicated cleanup patch.
 
 ### Acceptance criteria
 

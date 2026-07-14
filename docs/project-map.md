@@ -85,15 +85,19 @@ Responsibilities:
 
 - Fetch configurations over HTTP
 - Reuse ETag and local disk cache
-- Retry selected transient failures
-- Fall back to cached configuration
+- Retry 5xx and network failures according to policy
+- Reject 400/403/404 and 429 without retrying
+- Fall back to cached configuration only after exhausted transient failures
 - Run a basic circuit breaker
-- Watch for configuration changes
+- Use a dedicated watch timeout larger than the server long-poll timeout
+- Refetch and persist configurations after a watch change
 - Call Feature Flag evaluation API
 
 Current package: `com.example.democlient`
 
 The package name is legacy naming. Do not rename it as incidental cleanup; handle it only in a dedicated low-risk cleanup task after behavioral stabilization.
+
+The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file.
 
 ## 4. Server architecture
 
@@ -270,9 +274,10 @@ Rule order:
 ```text
 client reads cached ETag
   -> GET /api/configs with If-None-Match
-  -> 304: use cached body
+  -> 304: require and use cached body
   -> 200: persist new ETag and body
-  -> transient failure: use cache when available
+  -> 400/403/404/429: fail without retry or cache fallback
+  -> 5xx/network failure: retry, then use cache when available
 ```
 
 ### Configuration watch
@@ -306,12 +311,9 @@ Current high-priority categories:
 
 - Error body and HTTP status inconsistency
 - Incomplete authorization coverage
-- Client long-poll timeout mismatch
-- Client does not actually refetch after watch change
-- Client accepts non-success responses too loosely
 - Insufficient regression tests
 - Documentation drift
-- Legacy package and cache-file naming cleanup
+- Legacy client package naming cleanup
 
 ## 9. Documentation ownership
 

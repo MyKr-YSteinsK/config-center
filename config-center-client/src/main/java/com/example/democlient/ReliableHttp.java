@@ -6,107 +6,102 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestOperations;
 import org.springframework.web.client.RestTemplate;
 
-/**
- * 带超时、重试和断路器的 HTTP 拉取器。
- * 这个类基本就是客户端可靠性演示的核心。
- */
-public class ReliableHttp {
+public class ReliableHttp implements HttpFetcher {
 
-    private final RestTemplate restTemplate;
+    private final RestOperations restOperations;
     private final RetryPolicy retryPolicy;
     private final CircuitBreaker breaker;
+    private final Sleeper sleeper;
 
-    public ReliableHttp(int connectTimeoutMs, int readTimeoutMs, RetryPolicy retryPolicy, CircuitBreaker breaker) {
-        SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
-        f.setConnectTimeout(connectTimeoutMs);
-        f.setReadTimeout(readTimeoutMs);
+    public ReliableHttp(int connectTimeoutMs, int readTimeoutMs,
+                        RetryPolicy retryPolicy, CircuitBreaker breaker) {
+        this(restTemplate(connectTimeoutMs, readTimeoutMs), retryPolicy, breaker, Thread::sleep);
+    }
 
-        this.restTemplate = new RestTemplate(f);
+    ReliableHttp(RestOperations restOperations, RetryPolicy retryPolicy,
+                 CircuitBreaker breaker, Sleeper sleeper) {
+        this.restOperations = restOperations;
+        this.retryPolicy = retryPolicy;
+        this.breaker = breaker;
+        this.sleeper = sleeper;
+    }
 
-        this.restTemplate.setErrorHandler(new org.springframework.web.client.DefaultResponseErrorHandler() {
+    @Override
+    public ResponseEntity<String> getWithRetry(String url, String ifNoneMatch) throws InterruptedException {
+        if (!breaker.allowRequest()) {
+            throw new HttpRequestFailedException("CIRCUIT_OPEN: " + breaker.snapshot(), true, null);
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        if (ifNoneMatch != null) {
+            headers.setIfNoneMatch(ifNoneMatch);
+        }
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        for (int attempt = 1; attempt <= retryPolicy.getMaxAttempts(); attempt++) {
+            try {
+                ResponseEntity<String> response = restOperations.exchange(
+                        url, HttpMethod.GET, entity, String.class);
+                int status = response.getStatusCode().value();
+
+                if (status == 200 || status == 304) {
+                    breaker.recordSuccess();
+                    return response;
+                }
+
+                breaker.recordFailure();
+                if (status >= 500 && status <= 599) {
+                    if (attempt < retryPolicy.getMaxAttempts()) {
+                        backoff(attempt);
+                        continue;
+                    }
+                    throw new HttpRequestFailedException(
+                            "HTTP_" + status + " after " + attempt + " attempts", status, true);
+                }
+
+                if (status == 429) {
+                    throw new HttpRequestFailedException("HTTP_429_TOO_MANY_REQUESTS", status, false);
+                }
+
+                throw new HttpRequestFailedException("HTTP_" + status, status, false);
+            } catch (ResourceAccessException e) {
+                breaker.recordFailure();
+                if (attempt < retryPolicy.getMaxAttempts()) {
+                    backoff(attempt);
+                    continue;
+                }
+                throw new HttpRequestFailedException(
+                        "Network request failed after " + attempt + " attempts", true, e);
+            }
+        }
+
+        throw new HttpRequestFailedException("Request failed", true, null);
+    }
+
+    private void backoff(int attempt) throws InterruptedException {
+        sleeper.sleep(retryPolicy.backoffWithJitter(attempt));
+    }
+
+    private static RestTemplate restTemplate(int connectTimeoutMs, int readTimeoutMs) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connectTimeoutMs);
+        factory.setReadTimeout(readTimeoutMs);
+
+        RestTemplate restTemplate = new RestTemplate(factory);
+        restTemplate.setErrorHandler(new org.springframework.web.client.DefaultResponseErrorHandler() {
             @Override
             public boolean hasError(org.springframework.http.client.ClientHttpResponse response) {
                 return false;
             }
         });
-        this.retryPolicy = retryPolicy;
-        this.breaker = breaker;
+        return restTemplate;
     }
 
-    /**
-     * 读取字符串响应，支持可选的 If-None-Match。
-     */
-    public ResponseEntity<String> getWithRetry(String url, String ifNoneMatch) throws InterruptedException {
-        if (!breaker.allowRequest()) {
-            throw new IllegalStateException("CIRCUIT_OPEN: " + breaker.snapshot());
-        }
-
-        HttpHeaders headers = new HttpHeaders();
-        if (ifNoneMatch != null) {
-            headers.set("If-None-Match", ifNoneMatch);
-        }
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
-
-        Exception last = null;
-
-        for (int attempt = 1; attempt <= retryPolicy.getMaxAttempts(); attempt++) {
-            try {
-                ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-                int code = resp.getStatusCode().value();
-
-                // 200 / 304 都算成功，说明服务端是正常响应的。
-                if (code == 200 || code == 304) {
-                    breaker.recordSuccess();
-                    return resp;
-                }
-
-                // 429 时别硬顶着重试，不然越限流越打爆。
-                if (code == 429) {
-                    breaker.recordFailure();
-                    throw new IllegalStateException("HTTP_429_TOO_MANY_REQUESTS");
-                }
-
-                // 5xx 认为是服务端暂时不稳，可以按策略试几次。
-                if (code >= 500 && code <= 599) {
-                    breaker.recordFailure();
-                    if (attempt < retryPolicy.getMaxAttempts()) {
-                        long sleep = retryPolicy.backoffWithJitter(attempt);
-                        System.out.println("WARN: server error " + code + ", retry in " + sleep + "ms");
-                        Thread.sleep(sleep);
-                        continue;
-                    }
-                    return resp;
-                }
-
-                // 其他 4xx 更像请求本身有问题，不适合盲目重试。
-                return resp;
-            } catch (ResourceAccessException e) {
-                last = e;
-                breaker.recordFailure();
-                if (attempt < retryPolicy.getMaxAttempts()) {
-                    long sleep = retryPolicy.backoffWithJitter(attempt);
-                    System.out.println("WARN: network error, retry in " + sleep + "ms: " + e.getMessage());
-                    Thread.sleep(sleep);
-                    continue;
-                }
-                throw e;
-            } catch (Exception e) {
-                last = e;
-                if (!(e instanceof IllegalStateException state && state.getMessage() != null && state.getMessage().startsWith("HTTP_429"))) {
-                    breaker.recordFailure();
-                }
-                if (attempt < retryPolicy.getMaxAttempts()) {
-                    long sleep = retryPolicy.backoffWithJitter(attempt);
-                    System.out.println("WARN: unexpected error, retry in " + sleep + "ms: " + e.getMessage());
-                    Thread.sleep(sleep);
-                    continue;
-                }
-                throw e;
-            }
-        }
-
-        throw new IllegalStateException("Request failed", last);
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long millis) throws InterruptedException;
     }
 }

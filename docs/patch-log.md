@@ -239,3 +239,45 @@ Replace the invalid maximum-item-version watch cursor with a persistent namespac
 ### Related plan items
 
 - `docs/dev-plan.md`: Phase 2
+
+---
+
+## 2026-07-14 — Complete Phase 3 client reliability path
+
+### Goal
+
+Make client retries, cache fallback, long polling, and refresh behavior deterministic and consistent.
+
+### Changes
+
+- Split standard and watch HTTP clients; the watch read timeout is server timeout plus an explicit margin.
+- Added injectable HTTP and cache boundaries plus reusable configuration fetch/watch coordination.
+- Classified responses so 200/304 succeed, 400/403/404 and 429 fail without retry, and 5xx/network failures retry before cache fallback.
+- Required a valid cache for 304 and prevented error responses from being cached as configuration.
+- Refetched and persisted configurations after `changed=true`.
+- Renamed the cache to `.config-center-client-cache.json` with one-time migration from `.config-center-demo-client-cache.json`.
+- Kept the legacy Java package unchanged for a separately scoped cleanup decision.
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-client test`
+- Result: passed.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API impact: none.
+- Data impact: no server data change; the client writes a new canonical cache file and preserves the legacy file.
+- Runtime/config impact: adds standard HTTP timeout settings and a watch timeout margin under `demo` configuration.
+
+### Residual risks
+
+- The package remains `com.example.democlient`; renaming it is intentionally deferred.
+- The first cache migration preserves the old file, so users may remove it manually after confirming the new cache.
+
+### Related plan items
+
+- `docs/dev-plan.md`: Phase 3
