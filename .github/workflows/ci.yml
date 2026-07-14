@@ -22,7 +22,7 @@ jobs:
           cache: maven
 
       - name: Build & Test
-        run: mvn -q -B clean verify
+        run: ./mvnw -q -B clean verify
 
       # 即使构建失败，也尽量把测试报告和覆盖率报告带出来，方便回看。
       - name: Upload surefire reports
