@@ -251,20 +251,20 @@ Goal: make the stabilized behavior difficult to regress.
 
 ---
 
-## Phase 5 — Documentation rebuild and stable project presentation
+## Phase 5 — Documentation rebuild and stable project presentation `[x]`
 
 Goal: rebuild public documentation only after implementation is trustworthy.
 
 ### Tasks
 
-- [ ] Re-audit all routes, configuration, persistence behavior, and client behavior.
-- [ ] Rewrite README around verified capabilities.
-- [ ] Add one accurate architecture diagram.
-- [ ] Add one verified end-to-end local demonstration.
-- [ ] Add expected outputs that are generated from the current implementation.
-- [ ] Document known limits honestly.
-- [ ] Review `examples.http` against actual authorization and response behavior.
-- [ ] Ensure `project-map.md`, `dev-plan.md`, and README agree.
+- [x] Re-audit all routes, configuration, persistence behavior, and client behavior.
+- [x] Rewrite README around verified capabilities.
+- [x] Add one accurate architecture diagram.
+- [x] Add one verified end-to-end local demonstration.
+- [x] Add expected outputs that are generated from the current implementation.
+- [x] Document known limits honestly.
+- [x] Review `examples.http` against actual authorization and response behavior.
+- [x] Ensure `project-map.md`, `dev-plan.md`, and README agree.
 
 ### Acceptance criteria
 
@@ -277,7 +277,7 @@ Goal: rebuild public documentation only after implementation is trustworthy.
 
 ## 4. Deferred enhancements
 
-Do not schedule these until Phases 1–5 are complete unless explicitly requested:
+The following enhancements remain outside the verified baseline and are not scheduled by this plan. Implement them only when explicitly requested:
 
 - MySQL or PostgreSQL
 - Flyway
@@ -295,6 +295,17 @@ Do not schedule these until Phases 1–5 are complete unless explicitly requeste
 ## 5. Newly discovered issue template
 
 Add new defects below before assigning them to a phase.
+
+### P1-ETAG-RESET — Persistent client cache can collide with reset H2 versions
+
+- Severity: P1
+- Evidence: `ConfigService.etagForList` hashes only ordered `configKey:version` pairs; the in-memory H2 database restarts business versions from 1, while `.config-center-client-cache.json` persists across server restarts.
+- Consequence: different configuration values with the same keys and reused versions can produce the same ETag, causing HTTP 304 and stale client cache reuse after a database reset.
+- Proposed phase: focused post-stabilization correctness patch before new capabilities.
+- Likely files: `ConfigService.java`, ETag/controller integration tests, README, project map, patch log.
+- API/data impact: no path or JSON change; corrected ETag values will invalidate previously cached entries naturally.
+- Verification: reproduce reset data with the same key/version but a different value and assert the old `If-None-Match` no longer returns 304.
+- Status: open; documented during Phase 5 and intentionally not fixed inside the documentation-only patch.
 
 ```markdown
 ### ISSUE-ID — concise title

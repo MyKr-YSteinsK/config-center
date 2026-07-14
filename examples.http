@@ -1,107 +1,23 @@
-### ping（先确认服务真的起来了，别一上来就怀疑人生）
-GET http://localhost:8080/api/ping
+@baseUrl = http://localhost:8080
+@apiKey = kr-dev-key
 
-### 新建一个配置项
-POST http://localhost:8080/api/configs
+### Ping: HTTP 200, code=0
+GET {{baseUrl}}/api/ping
+
+### Configuration write without a key: HTTP 403, code=4031
+POST {{baseUrl}}/api/configs
 Content-Type: application/json
 
 {
   "app": "demo-app",
   "env": "dev",
-  "key": "db.pool.size",
-  "value": "10",
-  "description": "数据库连接池大小，先给个稳一点的默认值"
+  "key": "unauthorized.example",
+  "value": "blocked"
 }
 
-### 再改一次同一个 key，看看 version 会不会自动 +1
-POST http://localhost:8080/api/configs
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "key": "db.pool.size",
-  "value": "20",
-  "description": "连接池放大一点，模拟调优"
-}
-
-### 拉取当前环境下的全部配置
-GET http://localhost:8080/api/configs?app=demo-app&env=dev
-
-### 查单个配置，注意 key 里有点号也没问题
-GET http://localhost:8080/api/configs/db.pool.size?app=demo-app&env=dev
-
-### 故意少传 env，看看参数校验是不是正常
-GET http://localhost:8080/api/configs?app=demo-app
-
-### 查一个不存在的 key，应该返回 NOT_FOUND
-GET http://localhost:8080/api/configs/not-exist?app=demo-app&env=dev
-
-### 新建一个 feature flag
-POST http://localhost:8080/api/features
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "name": "new-checkout",
-  "enabled": true,
-  "rolloutPercentage": 30,
-  "allowlist": ["u1000", "u2000"]
-}
-
-### 拉全部 feature
-GET http://localhost:8080/api/features?app=demo-app&env=dev
-
-### 命中白名单，结果应该直接是 true
-GET http://localhost:8080/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u1000
-
-### 不在白名单里，就走灰度分桶逻辑
-GET http://localhost:8080/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u3000
-
-### 直接把总开关关掉，这时候所有人都该是 false
-POST http://localhost:8080/api/features
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "name": "new-checkout",
-  "enabled": false,
-  "rolloutPercentage": 100,
-  "allowlist": ["u1000"]
-}
-
-### enabled=false 时，就算在 allowlist 里也不放行
-GET http://localhost:8080/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u1000
-
-### 下面这组请求更像“完整演示链路”，先补一份配置数据
-POST http://localhost:8080/api/configs
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "key": "db.pool.size",
-  "value": "20",
-  "description": "pool size"
-}
-
-### 再补一份 feature 数据
-POST http://localhost:8080/api/features
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "name": "new-checkout",
-  "enabled": true,
-  "rolloutPercentage": 30,
-  "allowlist": ["u1000", "u2000"]
-}
-
-### 创建 config（operator / reason 可选，但审计里留着会更舒服）
-POST http://localhost:8080/api/configs
+### Create configuration: HTTP 200, version=1 on a fresh server
+POST {{baseUrl}}/api/configs
+X-API-Key: {{apiKey}}
 Content-Type: application/json
 
 {
@@ -110,12 +26,13 @@ Content-Type: application/json
   "key": "db.pool.size",
   "value": "10",
   "description": "pool size",
-  "operator": "kr",
-  "reason": "init"
+  "operator": "demo",
+  "reason": "initial value"
 }
 
-### 带 expectedVersion 更新，成功的话版本应该从 1 变成 2
-POST http://localhost:8080/api/configs
+### Update configuration: HTTP 200, version=2 after the create above
+POST {{baseUrl}}/api/configs
+X-API-Key: {{apiKey}}
 Content-Type: application/json
 
 {
@@ -123,14 +40,15 @@ Content-Type: application/json
   "env": "dev",
   "key": "db.pool.size",
   "value": "20",
-  "description": "pool size v2",
+  "description": "larger pool",
   "expectedVersion": 1,
-  "operator": "kr",
-  "reason": "tune"
+  "operator": "demo",
+  "reason": "tune pool"
 }
 
-### 故意制造版本冲突：expectedVersion=1，但当前其实已经是 2，应该报 4091
-POST http://localhost:8080/api/configs
+### Stale configuration update: HTTP 409, code=4091
+POST {{baseUrl}}/api/configs
+X-API-Key: {{apiKey}}
 Content-Type: application/json
 
 {
@@ -139,15 +57,26 @@ Content-Type: application/json
   "key": "db.pool.size",
   "value": "999",
   "expectedVersion": 1,
-  "operator": "kr",
-  "reason": "should fail"
+  "operator": "demo",
+  "reason": "expected conflict"
 }
 
-### 查 config 历史
-GET http://localhost:8080/api/configs/history?app=demo-app&env=dev&key=db.pool.size
+### List configurations: copy the ETag response header for the next request
+GET {{baseUrl}}/api/configs?app=demo-app&env=dev
 
-### 回滚到 version=1，注意回滚不是“穿越”，而是生成一个新的当前版本，比如 2 -> 3
-POST http://localhost:8080/api/configs/rollback
+### Conditional list: replace the value with the ETag copied above; expected HTTP 304
+GET {{baseUrl}}/api/configs?app=demo-app&env=dev
+If-None-Match: W/"replace-with-current-etag"
+
+### Read one configuration; dotted keys are supported
+GET {{baseUrl}}/api/configs/db.pool.size?app=demo-app&env=dev
+
+### Read configuration history; newest snapshot is first
+GET {{baseUrl}}/api/configs/history?app=demo-app&env=dev&key=db.pool.size
+
+### Roll back configuration version 1 as a new version; API Key is required
+POST {{baseUrl}}/api/configs/rollback
+X-API-Key: {{apiKey}}
 Content-Type: application/json
 
 {
@@ -155,15 +84,16 @@ Content-Type: application/json
   "env": "dev",
   "key": "db.pool.size",
   "targetVersion": 1,
-  "operator": "kr",
-  "reason": "rollback for demo"
+  "operator": "demo",
+  "reason": "restore initial value"
 }
 
-### 再查一次配置，确认 version 变成 3，同时 value 回到了 10
-GET http://localhost:8080/api/configs/db.pool.size?app=demo-app&env=dev
+### Watch configuration namespace revision; latestVersion is not an item version
+GET {{baseUrl}}/api/configs/watch?app=demo-app&env=dev&sinceVersion=0&timeoutSeconds=1
 
-### 创建 feature，初始版本就是 1
-POST http://localhost:8080/api/features
+### Create Feature Flag: HTTP 200, version=1 on a fresh server
+### Current scope deliberately does not require an API Key for Feature Flag writes.
+POST {{baseUrl}}/api/features
 Content-Type: application/json
 
 {
@@ -173,48 +103,24 @@ Content-Type: application/json
   "enabled": true,
   "rolloutPercentage": 30,
   "allowlist": ["u1000", "u2000"],
-  "operator": "kr",
-  "reason": "init",
-  "expectedVersion": null
+  "operator": "demo",
+  "reason": "initial rule"
 }
 
-### 更新 feature，expectedVersion=1，成功后应该升到 version=2
-POST http://localhost:8080/api/features
-Content-Type: application/json
+### List Feature Flags
+GET {{baseUrl}}/api/features?app=demo-app&env=dev
 
-{
-  "app": "demo-app",
-  "env": "dev",
-  "name": "new-checkout",
-  "enabled": true,
-  "rolloutPercentage": 80,
-  "allowlist": ["u1000"],
-  "operator": "kr",
-  "reason": "increase rollout",
-  "expectedVersion": 1
-}
+### Allowlist evaluation: enabled=true, bucket=-1, decision=allowlist 命中
+GET {{baseUrl}}/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u1000
 
-### 再故意冲突一次，验证 feature 的并发保护
-POST http://localhost:8080/api/features
-Content-Type: application/json
+### Percentage evaluation: stable bucket for the same user and feature
+GET {{baseUrl}}/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u3000
 
-{
-  "app": "demo-app",
-  "env": "dev",
-  "name": "new-checkout",
-  "enabled": false,
-  "rolloutPercentage": 0,
-  "allowlist": [],
-  "operator": "kr",
-  "reason": "should fail",
-  "expectedVersion": 1
-}
+### Read Feature Flag history
+GET {{baseUrl}}/api/features/history?app=demo-app&env=dev&name=new-checkout
 
-### 查 feature 历史，应该能看到 UPSERT 记录
-GET http://localhost:8080/api/features/history?app=demo-app&env=dev&name=new-checkout
-
-### 回滚 feature 到 version=1，这次会新生成 version=3，action 也会标成 ROLLBACK
-POST http://localhost:8080/api/features/rollback
+### Roll back Feature Flag version 1 as a new version
+POST {{baseUrl}}/api/features/rollback
 Content-Type: application/json
 
 {
@@ -222,88 +128,18 @@ Content-Type: application/json
   "env": "dev",
   "name": "new-checkout",
   "targetVersion": 1,
-  "operator": "kr",
-  "reason": "rollback for demo"
+  "operator": "demo",
+  "reason": "restore initial rule"
 }
 
-### 再查历史，确认 ROLLBACK 记录真的写进去了
-GET http://localhost:8080/api/features/history?app=demo-app&env=dev&name=new-checkout
+### Health
+GET {{baseUrl}}/actuator/health
 
-### 再拉一次配置列表
-GET http://localhost:8080/api/configs?app=demo-app&env=dev
+### Metrics catalog
+GET {{baseUrl}}/actuator/metrics
 
-### 带 If-None-Match 测试 304，前提是这个 ETag 和服务端当前一致
-GET http://localhost:8080/api/configs?app=demo-app&env=dev
-If-None-Match: W/"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+### Rate-limit blocked-request gauge
+GET {{baseUrl}}/actuator/metrics/config_center_rate_limit_blocked_total
 
-### 再补一次配置，给后面的 ETag 失效演示做准备
-POST http://localhost:8080/api/configs
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "key": "db.pool.size",
-  "value": "20",
-  "description": "pool size",
-  "operator": "kr",
-  "reason": "seed"
-}
-
-### 再补一次 feature flag
-POST http://localhost:8080/api/features
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "name": "new-checkout",
-  "enabled": true,
-  "rolloutPercentage": 30,
-  "allowlist": ["u1000", "u2000"],
-  "operator": "kr",
-  "reason": "seed"
-}
-
-### 更新配置让 ETag 失效
-### 这条如果不带 API Key，按现在的实现会被拦下，这里正好也能顺手验证权限
-POST http://localhost:8080/api/configs
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "key": "db.pool.size",
-  "value": "30",
-  "description": "pool size v2",
-  "operator": "kr",
-  "reason": "invalidate etag demo"
-}
-
-### actuator health
-GET http://localhost:8080/actuator/health
-
-### actuator metrics 总览
-GET http://localhost:8080/actuator/metrics
-
-### actuator prometheus
-GET http://localhost:8080/actuator/prometheus
-
-### 看限流指标，有没有被拦过一眼就知道
-GET http://localhost:8080/actuator/metrics/config_center_rate_limit_blocked_total
-
-### watch configs（sinceVersion/latestVersion 表示 app/env 命名空间修订号，不是单个配置项版本）
-GET http://localhost:8080/api/configs/watch?app=demo-app&env=dev&sinceVersion=0&timeoutSeconds=10
-
-### 带 API Key 的安全更新，这条才是写接口的标准姿势
-POST http://localhost:8080/api/configs
-X-API-Key: kr-dev-key
-Content-Type: application/json
-
-{
-  "app": "demo-app",
-  "env": "dev",
-  "key": "db.pool.size",
-  "value": "50",
-  "description": "带着钥匙来改配置，这次服务端才会点头"
-}
+### Prometheus exposition
+GET {{baseUrl}}/actuator/prometheus

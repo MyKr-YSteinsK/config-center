@@ -17,7 +17,7 @@ Its current learning focus is:
 - Basic authorization
 - Observability and automated verification
 
-It is not intended to become a production-grade enterprise control plane during the current stabilization phase.
+The verified baseline is intentionally local and single-process. It is not intended to become a production-grade enterprise control plane without a separately approved expansion of scope.
 
 ## 2. Repository structure
 
@@ -27,6 +27,9 @@ config-center/
 ├── README.md
 ├── AGENTS.md
 ├── examples.http
+├── mvnw
+├── mvnw.cmd
+├── .mvn/wrapper/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
@@ -199,28 +202,29 @@ Behavior mirrors configuration history.
 
 ### Configuration
 
-- `POST /api/configs`
+- `POST /api/configs` (`X-API-Key` required)
 - `GET /api/configs`
 - `GET /api/configs/{key}`
 - `GET /api/configs/history`
-- `POST /api/configs/rollback`
+- `POST /api/configs/rollback` (`X-API-Key` required)
 - `GET /api/configs/watch`
 
 ### Feature Flag
 
-- `POST /api/features`
+- `POST /api/features` (no write authorization in the current scope)
 - `GET /api/features`
 - `GET /api/features/evaluate`
 - `GET /api/features/history`
-- `POST /api/features/rollback`
+- `POST /api/features/rollback` (no write authorization in the current scope)
 
 ### Operations
 
+- `GET /api/ping`
 - `/actuator/health`
 - `/actuator/metrics`
 - `/actuator/prometheus`
-- Swagger UI
-- H2 Console
+- `/swagger-ui/index.html`
+- `/h2-console`
 
 ## 7. Important behavior paths
 
@@ -234,6 +238,7 @@ request
   -> create version 1 or increment current version
   -> save current row
   -> append history snapshot
+  -> advance the persistent app/env namespace revision
   -> after transaction commit, notify watchers
 ```
 
@@ -251,6 +256,7 @@ request
   -> copy historical value into current row
   -> increment current business version
   -> append ROLLBACK history
+  -> advance the persistent app/env namespace revision
   -> after transaction commit, notify watchers
 ```
 
@@ -301,23 +307,45 @@ Current behavior:
 - Rolled-back transactions neither expose a new revision nor notify clients.
 - The controller rechecks the revision after registering a waiter so a change cannot be lost between the initial read and registration.
 
-## 8. Known stabilization issues
+## 8. Runtime configuration baseline
 
-The canonical task list and status live in `docs/dev-plan.md`.
+Server defaults:
 
-Current high-priority categories:
+- Port `8080`
+- In-memory H2 database in MySQL compatibility mode
+- Hibernate `ddl-auto=update` and Open Session in View disabled
+- H2 Console enabled at `/h2-console`
+- Rate limiting enabled with capacity `5` and refill rate `5` tokens per second
+- Actuator exposes health, info, metrics, and Prometheus
+- One local API Key mapping: `kr-dev-key` -> `demo-app/dev`
 
-- Error body and HTTP status inconsistency
-- Incomplete authorization coverage
-- Documentation drift
-- Legacy client package naming cleanup
+Client defaults:
 
-## 9. Documentation ownership
+- Server base URL `http://localhost:8080`
+- Standard connect/read timeouts `800 ms / 3000 ms`
+- Watch timeout `10 s`, read-timeout margin `2000 ms`, and `5` rounds
+- Retry policy: 3 attempts with exponential backoff and jitter
+- Circuit breaker: open after 2 recorded failures for 5 seconds
+- Canonical cache `${user.home}/.config-center-client-cache.json`
+
+## 9. Known limits
+
+The stabilization phases are complete. The remaining limits are explicit product boundaries, not claims of implemented functionality:
+
+- ETags are derived from configuration keys and business versions, not values. An H2 restart can reuse versions while the client disk cache survives, so different reset data can collide with an old ETag and produce stale 304 cache reuse. This is tracked as an open P1 correctness issue in `docs/dev-plan.md`.
+- H2 data is in-memory and there is no Flyway or production database migration path.
+- The local API Key is plaintext; Feature Flag writes remain deliberately unauthenticated.
+- Rate-limit buckets and long-poll waiters are process-local and do not coordinate across server instances.
+- The client is a CLI demonstration rather than a published SDK; its package remains `com.example.democlient`.
+- The JSON disk cache has no encryption or cross-process locking.
+- RBAC, multi-tenancy, frontend administration, and distributed deployment are not implemented.
+
+## 10. Documentation ownership
 
 - `project-map.md`: current architecture and verified behavior
 - `dev-plan.md`: intended changes, phases, status, and acceptance criteria
 - `patch-log.md`: append-only history of completed patches
-- `README.md`: minimal public overview during stabilization
+- `README.md`: verified public overview, build/run guide, and local demonstration
 - `AGENTS.md`: mandatory Codex working rules
 
 When code changes any architecture or behavior described here, update this file in the same patch.

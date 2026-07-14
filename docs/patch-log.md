@@ -343,3 +343,57 @@ Protect stabilized server behavior with focused regression tests and complete bo
 ### Related plan items
 
 - `docs/dev-plan.md`: Phase 4
+
+---
+
+## 2026-07-14 — Complete Phase 5 documentation rebuild and stable presentation
+
+### Goal
+
+Replace stabilization-era documentation with a verified description of the current system, runnable commands, and an honest statement of remaining limits.
+
+### Changes
+
+- Re-audited every controller route, server/client configuration, JPA persistence model, and client reliability path against current code and tests.
+- Rebuilt README around verified capabilities, an accurate Mermaid architecture diagram, exact API authorization scope, runtime configuration, and known limits.
+- Added a PowerShell end-to-end demonstration with expected stable output fields generated from a fresh H2 server.
+- Replaced duplicated and unauthorized configuration-write examples with a concise `examples.http` flow aligned to actual HTTP statuses, API Key requirements, ETag, history, rollback, watch, Feature Flag, and operations behavior.
+- Updated the project map with Maven Wrapper files, namespace revision steps, exact endpoints, runtime defaults, and explicit local/single-process limits.
+- Recorded the newly discovered P1 risk where persistent client cache can collide with ETags after an in-memory H2 reset; no code fix was mixed into this documentation-only phase.
+- Marked all six stabilization phases complete without scheduling deferred enterprise features.
+
+### Files changed
+
+- `README.md`
+- `examples.http`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `java -jar config-center-server/target/config-center-server-1.0.0.jar --server.port=18082 --rate-limit.enabled=false`
+- Result: passed; server reached `UP` and the documented REST sequence created configuration version 1, returned 304 for a matching ETag, created Feature Flag version 1, returned an allowlist decision, and returned `changed=true/latestVersion=1` from watch.
+- Command: `.\mvnw.cmd -q -B -pl config-center-client spring-boot:run '-Dspring-boot.run.arguments=--demo.baseUrl=http://localhost:18083 --demo.watch.enabled=false' '-Dspring-boot.run.jvmArguments=-Duser.home=D:\CS\config-center\config-center-client\target\phase5-home'`
+- Result: passed; client fetched configuration version 1, evaluated the Feature Flag, printed its metrics summary, and exited normally.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 34 tests and client 15 tests completed with 0 failures and 0 errors.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API impact: none; documentation now reflects the existing paths, fields, statuses, and authorization behavior.
+- Data impact: none; runtime verification used fresh in-memory H2 processes.
+- Runtime/config impact: none.
+
+### Residual risks
+
+- Demonstration version numbers assume a fresh server because the H2 database is in-memory; rerunning writes in one process increments versions.
+- The open P1 ETag reset collision can reuse stale persistent client cache across H2 restarts; clear the client cache after resetting server data until a focused correctness patch is completed.
+- Feature Flag writes, rate limiting, watch notification, H2 persistence, and the JSON client cache retain the local-only limits documented in README and the project map.
+- Deferred database, security, UI, and distributed-system enhancements are not implemented or scheduled.
+
+### Related plan items
+
+- `docs/dev-plan.md`: Phase 5
