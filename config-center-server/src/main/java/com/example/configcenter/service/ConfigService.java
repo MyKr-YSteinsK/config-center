@@ -1,7 +1,10 @@
 package com.example.configcenter.service;
 
 import com.example.configcenter.domain.entity.ConfigItem;
+import com.example.configcenter.domain.entity.ConfigItemHistory;
+import com.example.configcenter.dto.request.RollbackConfigRequest;
 import com.example.configcenter.dto.request.UpsertConfigRequest;
+import com.example.configcenter.dto.response.ConfigHistoryDto;
 import com.example.configcenter.dto.response.ConfigItemDto;
 import com.example.configcenter.exception.BizException;
 import com.example.configcenter.exception.ErrorCode;
@@ -108,14 +111,14 @@ public class ConfigService {
     }
 
     @Transactional
-    public ConfigItemDto rollback(com.example.configcenter.dto.request.RollbackConfigRequest req) {
+    public ConfigItemDto rollback(RollbackConfigRequest req) {
 
         ConfigItem current = repo.findByAppAndEnvAndConfigKey(req.getApp(), req.getEnv(), req.getKey())
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "配置不存在: " + req.getKey()));
 
         long targetVer = req.getTargetVersion();
 
-        com.example.configcenter.domain.entity.ConfigItemHistory target = historyRepo
+        ConfigItemHistory target = historyRepo
                 .findByAppAndEnvAndConfigKeyAndVersion(req.getApp(), req.getEnv(), req.getKey(), targetVer)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "找不到目标历史版本: " + targetVer));
 
@@ -134,10 +137,10 @@ public class ConfigService {
     }
 
     @Transactional(readOnly = true)
-    public java.util.List<com.example.configcenter.dto.response.ConfigHistoryDto> history(String app, String env, String key) {
+    public List<ConfigHistoryDto> history(String app, String env, String key) {
         return historyRepo.findAllByAppAndEnvAndConfigKeyOrderByVersionDesc(app, env, key)
                 .stream()
-                .map(h -> new com.example.configcenter.dto.response.ConfigHistoryDto(
+                .map(h -> new ConfigHistoryDto(
                         h.getApp(), h.getEnv(), h.getConfigKey(), h.getConfigValue(), h.getDescription(),
                         h.getVersion(), h.getAction(), h.getOperator(), h.getReason(), h.getCreatedAt()
                 ))
@@ -166,11 +169,10 @@ public class ConfigService {
         );
     }
 
-    private com.example.configcenter.domain.entity.ConfigItemHistory toHistory(
+    private ConfigItemHistory toHistory(
             ConfigItem item, String action, String operator, String reason) {
 
-        com.example.configcenter.domain.entity.ConfigItemHistory h =
-                new com.example.configcenter.domain.entity.ConfigItemHistory();
+        ConfigItemHistory h = new ConfigItemHistory();
 
         h.setApp(item.getApp());
         h.setEnv(item.getEnv());

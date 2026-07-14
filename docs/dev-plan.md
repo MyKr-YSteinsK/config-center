@@ -224,23 +224,23 @@ Do not mix package rename into the main reliability patch unless explicitly appr
 
 ---
 
-## Phase 4 — Server regression coverage and code cleanup
+## Phase 4 — Server regression coverage and code cleanup `[x]`
 
 Goal: make the stabilized behavior difficult to regress.
 
 ### Tasks
 
-- [ ] Add configuration history tests.
-- [ ] Add configuration rollback tests.
-- [ ] Add Feature Flag upsert/history/rollback tests.
-- [ ] Add ETag / 304 controller tests.
-- [ ] Add rate-limit response and metric tests where practical.
-- [ ] Add optimistic-lock behavior tests where deterministic.
-- [ ] Review transaction boundaries.
-- [ ] Replace unnecessarily fully qualified names in touched files only.
-- [ ] Remove obsolete or misleading comments in touched files.
-- [ ] Review whether custom metrics use instance-safe state.
-- [ ] Confirm JaCoCo reports are generated for useful modules.
+- [x] Add configuration history tests.
+- [x] Add configuration rollback tests.
+- [x] Add Feature Flag upsert/history/rollback tests.
+- [x] Add ETag / 304 controller tests.
+- [x] Add rate-limit response and metric tests where practical.
+- [x] Add optimistic-lock behavior tests where deterministic.
+- [x] Review transaction boundaries.
+- [x] Replace unnecessarily fully qualified names in touched files only.
+- [x] Remove obsolete or misleading comments in touched files.
+- [x] Review whether custom metrics use instance-safe state.
+- [x] Confirm JaCoCo reports are generated for useful modules.
 
 ### Acceptance criteria
 

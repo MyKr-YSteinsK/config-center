@@ -1,8 +1,11 @@
 package com.example.configcenter.controller;
 
 import com.example.configcenter.dto.ApiResponse;
+import com.example.configcenter.dto.request.RollbackConfigRequest;
 import com.example.configcenter.dto.request.UpsertConfigRequest;
+import com.example.configcenter.dto.response.ConfigHistoryDto;
 import com.example.configcenter.dto.response.ConfigItemDto;
+import com.example.configcenter.dto.response.ConfigWatchDto;
 import com.example.configcenter.exception.BizException;
 import com.example.configcenter.exception.ErrorCode;
 import com.example.configcenter.service.ApiKeyService;
@@ -11,7 +14,12 @@ import com.example.configcenter.service.ConfigWatchNotifier;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.async.DeferredResult;
+
+import java.time.Duration;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api")
@@ -43,7 +51,7 @@ public class ConfigController {
 
     // 配置列表支持 If-None-Match，这样客户端没命中更新时可以直接拿 304，省 body 也省流量。
     @GetMapping("/configs")
-    public org.springframework.http.ResponseEntity<?> list(
+    public ResponseEntity<?> list(
             @RequestParam @NotBlank String app,
             @RequestParam @NotBlank String env,
             @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch) {
@@ -52,11 +60,11 @@ public class ConfigController {
 
         if (ifNoneMatch != null && ifNoneMatch.equals(etag)) {
             // 304 按惯例不带 body，但 traceId 这种头信息还是会正常挂出去。
-            return org.springframework.http.ResponseEntity.status(304).eTag(etag).build();
+            return ResponseEntity.status(304).eTag(etag).build();
         }
 
-        java.util.List<com.example.configcenter.dto.response.ConfigItemDto> data = service.list(app, env);
-        return org.springframework.http.ResponseEntity.ok().eTag(etag).body(com.example.configcenter.dto.ApiResponse.ok(data));
+        List<ConfigItemDto> data = service.list(app, env);
+        return ResponseEntity.ok().eTag(etag).body(ApiResponse.ok(data));
     }
 
     /**
@@ -71,28 +79,28 @@ public class ConfigController {
     }
 
     @GetMapping("/configs/history")
-    public com.example.configcenter.dto.ApiResponse<java.util.List<com.example.configcenter.dto.response.ConfigHistoryDto>> history(
-            @RequestParam @jakarta.validation.constraints.NotBlank String app,
-            @RequestParam @jakarta.validation.constraints.NotBlank String env,
-            @RequestParam @jakarta.validation.constraints.NotBlank String key) {
-        return com.example.configcenter.dto.ApiResponse.ok(service.history(app, env, key));
+    public ApiResponse<List<ConfigHistoryDto>> history(
+            @RequestParam @NotBlank String app,
+            @RequestParam @NotBlank String env,
+            @RequestParam @NotBlank String key) {
+        return ApiResponse.ok(service.history(app, env, key));
     }
 
     @PostMapping("/configs/rollback")
-    public com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigItemDto> rollback(
+    public ApiResponse<ConfigItemDto> rollback(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
-            @jakarta.validation.Valid @RequestBody com.example.configcenter.dto.request.RollbackConfigRequest req) {
+            @Valid @RequestBody RollbackConfigRequest req) {
         if (!apiKeyService.allow(apiKey, req.getApp(), req.getEnv())) {
             throw new BizException(ErrorCode.FORBIDDEN, "API Key 无权限，当前 app/env 不允许写入");
         }
-        return com.example.configcenter.dto.ApiResponse.ok(service.rollback(req));
+        return ApiResponse.ok(service.rollback(req));
     }
 
     // watch 走长轮询：有更新就立即返回，没更新就先挂住，直到超时或者被通知唤醒。
     @GetMapping("/configs/watch")
-    public org.springframework.web.context.request.async.DeferredResult<com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigWatchDto>> watch(
-            @RequestParam @jakarta.validation.constraints.NotBlank String app,
-            @RequestParam @jakarta.validation.constraints.NotBlank String env,
+    public DeferredResult<ApiResponse<ConfigWatchDto>> watch(
+            @RequestParam @NotBlank String app,
+            @RequestParam @NotBlank String env,
             @RequestParam long sinceVersion,
             @RequestParam(defaultValue = "30") int timeoutSeconds) {
 
@@ -100,18 +108,16 @@ public class ConfigController {
 
         if (latest > sinceVersion) {
             // 版本已经变了，就别让客户端白等，直接回。
-            org.springframework.web.context.request.async.DeferredResult<com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigWatchDto>> dr =
-                    new org.springframework.web.context.request.async.DeferredResult<>(0L);
-            dr.setResult(com.example.configcenter.dto.ApiResponse.ok(new com.example.configcenter.dto.response.ConfigWatchDto(true, latest)));
+            DeferredResult<ApiResponse<ConfigWatchDto>> dr = new DeferredResult<>(0L);
+            dr.setResult(ApiResponse.ok(new ConfigWatchDto(true, latest)));
             return dr;
         }
-        org.springframework.web.context.request.async.DeferredResult<com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigWatchDto>> dr =
-                notifier.register(app, env, java.time.Duration.ofSeconds(timeoutSeconds), latest);
+        DeferredResult<ApiResponse<ConfigWatchDto>> dr =
+                notifier.register(app, env, Duration.ofSeconds(timeoutSeconds), latest);
 
         long latestAfterRegistration = service.latestVersion(app, env);
         if (latestAfterRegistration > sinceVersion) {
-            dr.setResult(com.example.configcenter.dto.ApiResponse.ok(
-                    new com.example.configcenter.dto.response.ConfigWatchDto(true, latestAfterRegistration)));
+            dr.setResult(ApiResponse.ok(new ConfigWatchDto(true, latestAfterRegistration)));
         }
         return dr;
     }

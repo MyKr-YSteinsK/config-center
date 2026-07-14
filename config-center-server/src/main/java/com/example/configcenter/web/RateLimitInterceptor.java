@@ -5,6 +5,7 @@ import com.example.configcenter.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
@@ -13,10 +14,11 @@ import java.util.concurrent.atomic.LongAdder;
  * 一个很轻量的限流拦截器。
  * 它不是生产级网关，但足够把“别让接口被无脑打爆”这个意识带进项目里。
  */
+@Component
 public class RateLimitInterceptor implements HandlerInterceptor {
 
     private final RateLimitProperties props;
-    private static final LongAdder RATE_LIMIT_BLOCKED = new LongAdder();
+    private final LongAdder blockedCount = new LongAdder();
 
     // key = ip + method + uri，粒度不算细腻，但 demo 阶段已经够说明思路了。
     private final ConcurrentHashMap<String, TokenBucket> buckets = new ConcurrentHashMap<>();
@@ -43,14 +45,14 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         );
 
         if (!bucket.tryConsume(1)) {
-            RATE_LIMIT_BLOCKED.increment();
+            blockedCount.increment();
             throw new BizException(ErrorCode.RATE_LIMIT, "请求过于频繁，请稍后再试");
         }
 
         return true;
     }
 
-    public static long getBlockedCount() {
-        return RATE_LIMIT_BLOCKED.sum();
+    public long getBlockedCount() {
+        return blockedCount.sum();
     }
 }

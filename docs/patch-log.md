@@ -281,3 +281,65 @@ Make client retries, cache fallback, long polling, and refresh behavior determin
 ### Related plan items
 
 - `docs/dev-plan.md`: Phase 3
+
+---
+
+## 2026-07-14 — Complete Phase 4 server regression coverage and code cleanup
+
+### Goal
+
+Protect stabilized server behavior with focused regression tests and complete bounded cleanup in the touched files.
+
+### Changes
+
+- Added configuration history, rollback, and deterministic optimistic-lock coverage.
+- Added Feature Flag upsert/history/rollback coverage.
+- Added MockMvc coverage for ETag/304 behavior and rate-limit response/metric behavior.
+- Replaced the static blocked-request counter with state owned by the injected `RateLimitInterceptor` instance and bound the Micrometer gauge to that instance.
+- Reviewed service transaction boundaries; writes remain transactional, reads remain read-only, and namespace revision advancement remains mandatory inside a caller transaction.
+- Removed unnecessary fully qualified names and obsolete comments only in files already touched by this phase.
+- Confirmed JaCoCo HTML/XML reports are generated for both server and client modules.
+
+### Files changed
+
+- `config-center-server/src/main/java/com/example/configcenter/controller/ConfigController.java`
+- `config-center-server/src/main/java/com/example/configcenter/controller/FeatureController.java`
+- `config-center-server/src/main/java/com/example/configcenter/domain/entity/ConfigItem.java`
+- `config-center-server/src/main/java/com/example/configcenter/metrics/CustomMetrics.java`
+- `config-center-server/src/main/java/com/example/configcenter/service/ConfigService.java`
+- `config-center-server/src/main/java/com/example/configcenter/service/FeatureFlagService.java`
+- `config-center-server/src/main/java/com/example/configcenter/web/RateLimitInterceptor.java`
+- `config-center-server/src/main/java/com/example/configcenter/web/WebConfig.java`
+- `config-center-server/src/test/java/com/example/configcenter/ConfigEtagIntegrationTest.java`
+- `config-center-server/src/test/java/com/example/configcenter/ConfigServiceTest.java`
+- `config-center-server/src/test/java/com/example/configcenter/FeatureFlagServiceTest.java`
+- `config-center-server/src/test/java/com/example/configcenter/RateLimitIntegrationTest.java`
+- `docs/dev-plan.md`
+- `docs/project-map.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server '-Dtest=ConfigServiceTest,FeatureFlagServiceTest,ConfigEtagIntegrationTest,RateLimitIntegrationTest' test`
+- Result: passed; focused Phase 4 regression suite completed with 0 failures and 0 errors.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 34 tests and client 15 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- JaCoCo result: generated `config-center-server/target/site/jacoco/index.html` and `config-center-client/target/site/jacoco/index.html`, with corresponding XML reports.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API impact: none; paths, JSON field names, status behavior, and authorization rules are unchanged.
+- Data impact: none.
+- Runtime/config impact: the rate-limit blocked metric is now scoped to the active interceptor instance instead of shared static process state; metric name and meaning are unchanged.
+
+### Residual risks
+
+- The H2 optimistic-lock test proves deterministic stale-entity rejection for the local baseline; behavior on a future production database should be reverified when one is introduced.
+- Rate limiting remains process-local and intentionally does not coordinate across multiple server instances.
+- Documentation presentation and the verified end-to-end demonstration remain for Phase 5.
+
+### Related plan items
+
+- `docs/dev-plan.md`: Phase 4

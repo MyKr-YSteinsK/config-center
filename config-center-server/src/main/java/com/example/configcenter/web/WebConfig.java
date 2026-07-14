@@ -12,14 +12,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @EnableConfigurationProperties(RateLimitProperties.class)
 public class WebConfig implements WebMvcConfigurer {
 
-    private final RateLimitProperties props;
+    private final RateLimitInterceptor rateLimitInterceptor;
 
-    public WebConfig(RateLimitProperties props) {
-        this.props = props;
+    public WebConfig(RateLimitInterceptor rateLimitInterceptor) {
+        this.rateLimitInterceptor = rateLimitInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new RateLimitInterceptor(props));
+        registry.addInterceptor(rateLimitInterceptor);
     }
 }

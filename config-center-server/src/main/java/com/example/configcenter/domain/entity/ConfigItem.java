@@ -39,7 +39,7 @@ public class ConfigItem {
 
     /**
      * 业务版本号，不是数据库主键。
-     * 它会贯穿 ETag、回滚、历史审计、watch 等链路，算是这套 demo 的主心骨之一。
+     * 它会贯穿 ETag、回滚和历史审计链路；watch 使用独立的命名空间修订号。
      */
     @Column(nullable = false)
     private long version;

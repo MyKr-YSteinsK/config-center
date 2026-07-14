@@ -1,9 +1,11 @@
 package com.example.configcenter.controller;
 
 import com.example.configcenter.dto.ApiResponse;
+import com.example.configcenter.dto.request.RollbackFeatureRequest;
 import com.example.configcenter.dto.request.UpsertFeatureRequest;
 import com.example.configcenter.dto.response.FeatureEvalResult;
 import com.example.configcenter.dto.response.FeatureFlagDto;
+import com.example.configcenter.dto.response.FeatureHistoryDto;
 import com.example.configcenter.service.FeatureFlagService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -44,17 +46,17 @@ public class FeatureController {
     }
 
     @GetMapping("/history")
-    public com.example.configcenter.dto.ApiResponse<java.util.List<com.example.configcenter.dto.response.FeatureHistoryDto>> history(
+    public ApiResponse<List<FeatureHistoryDto>> history(
             @RequestParam @NotBlank String app,
             @RequestParam @NotBlank String env,
             @RequestParam @NotBlank String name) {
-        return com.example.configcenter.dto.ApiResponse.ok(service.history(app, env, name));
+        return ApiResponse.ok(service.history(app, env, name));
     }
 
     // 这里的回滚思路和配置项一致：不是把旧记录改回来，而是生成一条新的当前版本。
     @PostMapping("/rollback")
-    public com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.FeatureFlagDto> rollback(
-            @Valid @RequestBody com.example.configcenter.dto.request.RollbackFeatureRequest req) {
-        return com.example.configcenter.dto.ApiResponse.ok(service.rollback(req));
+    public ApiResponse<FeatureFlagDto> rollback(
+            @Valid @RequestBody RollbackFeatureRequest req) {
+        return ApiResponse.ok(service.rollback(req));
     }
 }

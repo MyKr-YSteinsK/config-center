@@ -1,9 +1,12 @@
 package com.example.configcenter.service;
 
 import com.example.configcenter.domain.entity.FeatureFlag;
+import com.example.configcenter.domain.entity.FeatureFlagHistory;
+import com.example.configcenter.dto.request.RollbackFeatureRequest;
 import com.example.configcenter.dto.request.UpsertFeatureRequest;
 import com.example.configcenter.dto.response.FeatureEvalResult;
 import com.example.configcenter.dto.response.FeatureFlagDto;
+import com.example.configcenter.dto.response.FeatureHistoryDto;
 import com.example.configcenter.exception.BizException;
 import com.example.configcenter.exception.ErrorCode;
 import com.example.configcenter.repository.FeatureFlagHistoryRepository;
@@ -68,13 +71,13 @@ public class FeatureFlagService {
     }
 
     @Transactional
-    public FeatureFlagDto rollback(com.example.configcenter.dto.request.RollbackFeatureRequest req) {
+    public FeatureFlagDto rollback(RollbackFeatureRequest req) {
         FeatureFlag current = repo.findByAppAndEnvAndName(req.getApp(), req.getEnv(), req.getName())
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "Feature 不存在: " + req.getName()));
 
         long targetVer = req.getTargetVersion();
 
-        com.example.configcenter.domain.entity.FeatureFlagHistory target = historyRepo
+        FeatureFlagHistory target = historyRepo
                 .findByAppAndEnvAndNameAndVersion(req.getApp(), req.getEnv(), req.getName(), targetVer)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "找不到目标历史版本: " + targetVer));
 
@@ -98,10 +101,10 @@ public class FeatureFlagService {
     }
 
     @Transactional(readOnly = true)
-    public java.util.List<com.example.configcenter.dto.response.FeatureHistoryDto> history(String app, String env, String name) {
+    public List<FeatureHistoryDto> history(String app, String env, String name) {
         return historyRepo.findAllByAppAndEnvAndNameOrderByVersionDesc(app, env, name)
                 .stream()
-                .map(h -> new com.example.configcenter.dto.response.FeatureHistoryDto(
+                .map(h -> new FeatureHistoryDto(
                         h.getApp(), h.getEnv(), h.getName(),
                         h.isEnabled(), h.getRolloutPercentage(), h.getAllowlist(),
                         h.getVersion(), h.getAction(), h.getOperator(), h.getReason(), h.getCreatedAt()
@@ -136,11 +139,10 @@ public class FeatureFlagService {
         );
     }
 
-    private com.example.configcenter.domain.entity.FeatureFlagHistory toHistory(
+    private FeatureFlagHistory toHistory(
             FeatureFlag ff, String action, String operator, String reason) {
 
-        com.example.configcenter.domain.entity.FeatureFlagHistory h =
-                new com.example.configcenter.domain.entity.FeatureFlagHistory();
+        FeatureFlagHistory h = new FeatureFlagHistory();
 
         h.setApp(ff.getApp());
         h.setEnv(ff.getEnv());

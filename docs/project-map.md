@@ -115,7 +115,7 @@ Cross-cutting paths:
 
 ```text
 Trace filter -> MDC traceId -> ApiResponse / logs
-RateLimitInterceptor -> TokenBucket -> 429 response
+RateLimitInterceptor -> TokenBucket -> 429 response / instance-scoped blocked metric
 GlobalExceptionHandler -> unified error body
 Actuator / Micrometer -> health and metrics endpoints
 ```
@@ -254,8 +254,6 @@ request
   -> after transaction commit, notify watchers
 ```
 
-The notification portion must be corrected during the watch stabilization phase.
-
 ### Write authorization scope
 
 During Phase 1, API Key authorization applies only to configuration upsert and rollback. Feature Flag write endpoints deliberately remain outside this minimal authorization scope; expanding them requires a separate security decision and patch.
@@ -311,7 +309,6 @@ Current high-priority categories:
 
 - Error body and HTTP status inconsistency
 - Incomplete authorization coverage
-- Insufficient regression tests
 - Documentation drift
 - Legacy client package naming cleanup
 

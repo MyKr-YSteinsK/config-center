@@ -12,8 +12,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomMetrics {
 
-    public CustomMetrics(MeterRegistry registry) {
-        Gauge.builder("config_center_rate_limit_blocked_total", RateLimitInterceptor::getBlockedCount)
+    public CustomMetrics(MeterRegistry registry, RateLimitInterceptor rateLimitInterceptor) {
+        Gauge.builder("config_center_rate_limit_blocked_total",
+                        rateLimitInterceptor, RateLimitInterceptor::getBlockedCount)
                 .description("Total number of requests blocked by rate limit")
                 .register(registry);
     }
