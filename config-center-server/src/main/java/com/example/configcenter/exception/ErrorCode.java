@@ -7,6 +7,7 @@ package com.example.configcenter.exception;
 public enum ErrorCode {
 
     PARAM_INVALID(4001, "参数错误"),
+    FORBIDDEN(4031, "无写入权限"),
     NOT_FOUND(4041, "资源不存在"),
     CONFLICT(4091, "版本冲突"),
     RATE_LIMIT(4290, "Too Many Requests"),

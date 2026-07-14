@@ -65,7 +65,7 @@ None.
 
 ---
 
-## Phase 1 — API correctness and write authorization
+## Phase 1 — API correctness and write authorization `[x]`
 
 Goal: make HTTP semantics and write protection internally consistent.
 
@@ -78,18 +78,18 @@ Goal: make HTTP semantics and write protection internally consistent.
 
 ### Tasks
 
-- [ ] Add a dedicated authorization error code with HTTP 403.
-- [ ] Return explicit HTTP status codes for:
+- [x] Add a dedicated authorization error code with HTTP 403.
+- [x] Return explicit HTTP status codes for:
   - request body validation
   - request parameter validation
   - malformed JSON
   - data integrity conflict
   - optimistic locking conflict
-- [ ] Apply API Key authorization to configuration rollback.
-- [ ] Preserve existing successful response bodies.
-- [ ] Add MockMvc regression tests for status and response code.
-- [ ] Add authorization tests for allowed, missing, and unauthorized keys.
-- [ ] Document the intentionally limited Feature authorization scope.
+- [x] Apply API Key authorization to configuration rollback.
+- [x] Preserve existing successful response bodies.
+- [x] Add MockMvc regression tests for status and response code.
+- [x] Add authorization tests for allowed, missing, and unauthorized keys.
+- [x] Document the intentionally limited Feature authorization scope.
 
 ### Acceptance criteria
 

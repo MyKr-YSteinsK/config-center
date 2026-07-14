@@ -36,7 +36,7 @@ public class ConfigController {
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @Valid @RequestBody UpsertConfigRequest req) {
         if (!apiKeyService.allow(apiKey, req.getApp(), req.getEnv())) {
-            throw new BizException(ErrorCode.PARAM_INVALID, "API Key 无权限，当前 app/env 不允许写入");
+            throw new BizException(ErrorCode.FORBIDDEN, "API Key 无权限，当前 app/env 不允许写入");
         }
         return ApiResponse.ok(service.upsert(req));
     }
@@ -80,7 +80,11 @@ public class ConfigController {
 
     @PostMapping("/configs/rollback")
     public com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigItemDto> rollback(
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @jakarta.validation.Valid @RequestBody com.example.configcenter.dto.request.RollbackConfigRequest req) {
+        if (!apiKeyService.allow(apiKey, req.getApp(), req.getEnv())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "API Key 无权限，当前 app/env 不允许写入");
+        }
         return com.example.configcenter.dto.ApiResponse.ok(service.rollback(req));
     }
 

@@ -161,3 +161,40 @@ Complete the repository governance baseline with reproducible Maven verification
 ### Related plan items
 
 - `docs/dev-plan.md`: Phase 0
+
+---
+
+## 2026-07-14 — Complete Phase 1 API correctness and configuration write authorization
+
+### Goal
+
+Make configuration write authorization and API error HTTP statuses consistent.
+
+### Changes
+
+- Added error code `4031` and mapped it to HTTP 403.
+- Changed validation and malformed JSON responses to HTTP 400; data-integrity and optimistic-lock conflicts to HTTP 409.
+- Applied the existing `app`/`env` API Key rule to configuration rollback.
+- Added MockMvc regression coverage for error status/code combinations and configuration write authorization.
+- Documented that Feature Flag writes intentionally remain outside API Key authorization in this phase.
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server -Dtest=ConfigControllerIntegrationTest test`
+- Result: passed.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed.
+
+### Compatibility
+
+- API impact: error HTTP statuses now agree with existing response error codes; successful response bodies and JSON field names are unchanged.
+- Data impact: none
+- Runtime/config impact: configuration rollback now requires the same API Key authorization as configuration upsert.
+
+### Residual risks
+
+- Feature Flag write endpoints remain deliberately unauthenticated; address them only in a separately scoped security patch.
+
+### Related plan items
+
+- `docs/dev-plan.md`: Phase 1

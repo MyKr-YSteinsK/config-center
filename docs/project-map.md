@@ -221,6 +221,8 @@ request
   -> after transaction commit, notify watchers
 ```
 
+Configuration upsert and rollback both require an API Key authorized for the requested `app` and `env`. Missing or unauthorized keys return HTTP 403 with error code `4031`.
+
 ### Configuration rollback
 
 Intended behavior:
@@ -236,7 +238,11 @@ request
   -> after transaction commit, notify watchers
 ```
 
-The authorization and notification portions must be verified and corrected during stabilization.
+The notification portion must be corrected during the watch stabilization phase.
+
+### Write authorization scope
+
+During Phase 1, API Key authorization applies only to configuration upsert and rollback. Feature Flag write endpoints deliberately remain outside this minimal authorization scope; expanding them requires a separate security decision and patch.
 
 ### Feature evaluation
 
