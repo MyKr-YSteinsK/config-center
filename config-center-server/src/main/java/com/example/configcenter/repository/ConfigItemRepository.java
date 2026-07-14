@@ -16,12 +16,4 @@ public interface ConfigItemRepository extends JpaRepository<ConfigItem, Long> {
 
     List<ConfigItem> findAllByAppAndEnvOrderByConfigKeyAsc(String app, String env);
 
-    // watch 场景要拿某个 app/env 的最新版本号，所以单独补一个 maxVersion 查询更直接。
-    @org.springframework.data.jpa.repository.Query("""
-        select coalesce(max(c.version), 0)
-        from ConfigItem c
-        where c.app = :app and c.env = :env
-        """)
-    long maxVersion(@org.springframework.data.repository.query.Param("app") String app,
-                    @org.springframework.data.repository.query.Param("env") String env);
 }

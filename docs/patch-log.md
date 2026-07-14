@@ -198,3 +198,44 @@ Make configuration write authorization and API error HTTP statuses consistent.
 ### Related plan items
 
 - `docs/dev-plan.md`: Phase 1
+
+---
+
+## 2026-07-14 — Complete Phase 2 configuration watch correctness
+
+### Goal
+
+Replace the invalid maximum-item-version watch cursor with a persistent namespace revision.
+
+### Changes
+
+- Added `ConfigNamespaceRevision`, its repository, and its service, keyed by `app + env` and protected by transaction-scoped locking.
+- Advanced the namespace revision once for each successful configuration upsert and rollback.
+- Notified waiting clients after commit with the committed revision; rolled-back transactions do not notify or expose a revision.
+- Removed `ConfigItemRepository.maxVersion` from watch semantics and closed the read/register race in the watch controller.
+- Documented `sinceVersion` and `latestVersion` as namespace revisions in `examples.http` and `docs/project-map.md`.
+- Added integration coverage for initial revision, repeated writes, multi-key changes, rollback, transaction rollback, timeout, immediate response, and waiting-client notification.
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server -Dtest=ConfigWatchIntegrationTest test`
+- Result: passed; 8 tests, 0 failures, 0 errors.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API impact: paths and JSON field names are unchanged; `sinceVersion` and `latestVersion` now mean namespace revision.
+- Data impact: adds the `config_namespace_revision` table under the current JPA/H2 schema management.
+- Runtime/config impact: none.
+
+### Residual risks
+
+- The in-memory waiter registry remains single-process; clustered server coordination is intentionally out of scope.
+- Concurrent first creation of the same namespace relies on the database unique constraint; a conflicting transaction fails rather than silently losing a revision.
+
+### Related plan items
+
+- `docs/dev-plan.md`: Phase 2

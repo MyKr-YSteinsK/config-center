@@ -105,6 +105,14 @@ public class ConfigController {
             dr.setResult(com.example.configcenter.dto.ApiResponse.ok(new com.example.configcenter.dto.response.ConfigWatchDto(true, latest)));
             return dr;
         }
-        return notifier.register(app, env, java.time.Duration.ofSeconds(timeoutSeconds), latest);
+        org.springframework.web.context.request.async.DeferredResult<com.example.configcenter.dto.ApiResponse<com.example.configcenter.dto.response.ConfigWatchDto>> dr =
+                notifier.register(app, env, java.time.Duration.ofSeconds(timeoutSeconds), latest);
+
+        long latestAfterRegistration = service.latestVersion(app, env);
+        if (latestAfterRegistration > sinceVersion) {
+            dr.setResult(com.example.configcenter.dto.ApiResponse.ok(
+                    new com.example.configcenter.dto.response.ConfigWatchDto(true, latestAfterRegistration)));
+        }
+        return dr;
     }
 }

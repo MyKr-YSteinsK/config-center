@@ -24,13 +24,16 @@ public class ConfigService {
 
     private final ConfigItemRepository repo;
     private final ConfigItemHistoryRepository historyRepo;
+    private final ConfigNamespaceRevisionService revisionService;
     private final ConfigWatchNotifier notifier;
 
     public ConfigService(ConfigItemRepository repo,
                          ConfigItemHistoryRepository historyRepo,
+                         ConfigNamespaceRevisionService revisionService,
                          ConfigWatchNotifier notifier) {
         this.repo = repo;
         this.historyRepo = historyRepo;
+        this.revisionService = revisionService;
         this.notifier = notifier;
     }
 
@@ -74,15 +77,8 @@ public class ConfigService {
 
         // 历史表按追加写入，不回头改旧记录，这样审计链路会更干净。
         historyRepo.save(toHistory(saved, "UPSERT", req.getOperator(), req.getReason()));
-
-        // 等事务真正提交成功再通知 watch 客户端，避免出现“被叫醒了但数据库还没落稳”的尴尬时刻。
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                long lv = latestVersion(req.getApp(), req.getEnv());
-                notifier.notifyChanged(req.getApp(), req.getEnv(), lv);
-            }
-        });
+        long revision = revisionService.advance(req.getApp(), req.getEnv());
+        notifyAfterCommit(req.getApp(), req.getEnv(), revision);
 
         return toDto(saved);
     }
@@ -132,6 +128,8 @@ public class ConfigService {
         ConfigItem saved = repo.save(current);
         historyRepo.save(toHistory(saved, "ROLLBACK", req.getOperator(),
                 "rollback-to=" + targetVer + (req.getReason() == null ? "" : (", " + req.getReason()))));
+        long revision = revisionService.advance(req.getApp(), req.getEnv());
+        notifyAfterCommit(req.getApp(), req.getEnv(), revision);
         return toDto(saved);
     }
 
@@ -148,7 +146,16 @@ public class ConfigService {
 
     @Transactional(readOnly = true)
     public long latestVersion(String app, String env) {
-        return repo.maxVersion(app, env);
+        return revisionService.current(app, env);
+    }
+
+    private void notifyAfterCommit(String app, String env, long revision) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                notifier.notifyChanged(app, env, revision);
+            }
+        });
     }
 
     private ConfigItemDto toDto(ConfigItem e) {

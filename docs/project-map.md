@@ -152,6 +152,18 @@ Behavior:
 - Append a new snapshot after rollback
 - Do not mutate old history records
 
+### Configuration namespace revision
+
+Entity: `ConfigNamespaceRevision`
+
+Business key:
+
+```text
+app + env
+```
+
+The persistent `revision` is the monotonic watch cursor for the namespace. It advances once inside every successful configuration upsert or rollback transaction. A pessimistic write lock serializes updates to an existing namespace row, and watchers are notified only after commit.
+
 ### Current Feature Flag
 
 Entity: `FeatureFlag`
@@ -275,14 +287,16 @@ GET /api/configs/watch
   &timeoutSeconds=...
 ```
 
-The current implementation historically reused the maximum per-item version as the environment change cursor. That semantic is incorrect when different keys have independent versions.
+The watch implementation uses the persistent `app/env` namespace revision rather than the maximum per-item configuration version.
 
-Target behavior:
+Current behavior:
 
-- Introduce an `app/env` namespace revision.
 - `sinceVersion` and `latestVersion` remain the external field names for compatibility during the first fix.
-- Their documented meaning becomes namespace revision, not per-item version.
-- Every successful configuration upsert and rollback advances the namespace revision after commit.
+- These fields represent namespace revision, not per-item version.
+- Every successful configuration upsert and rollback advances the revision inside its transaction.
+- Waiting clients are notified after commit with the committed revision.
+- Rolled-back transactions neither expose a new revision nor notify clients.
+- The controller rechecks the revision after registering a waiter so a change cannot be lost between the initial read and registration.
 
 ## 8. Known stabilization issues
 
@@ -292,8 +306,6 @@ Current high-priority categories:
 
 - Error body and HTTP status inconsistency
 - Incomplete authorization coverage
-- Incorrect watch cursor semantics
-- Missing watch notification after rollback
 - Client long-poll timeout mismatch
 - Client does not actually refetch after watch change
 - Client accepts non-success responses too loosely

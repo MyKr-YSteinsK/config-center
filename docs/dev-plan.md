@@ -115,7 +115,7 @@ Response HTTP status changes are behavior corrections. JSON field names should r
 
 ---
 
-## Phase 2 — Configuration watch correctness
+## Phase 2 — Configuration watch correctness `[x]`
 
 Goal: replace the invalid maximum-item-version cursor with a real namespace revision.
 
@@ -148,11 +148,11 @@ Required behavior:
 
 ### Tasks
 
-- [ ] Design the minimal namespace revision entity/repository/service.
-- [ ] Advance revision atomically inside configuration write transactions.
-- [ ] Notify watchers after commit with the committed revision.
-- [ ] Remove use of `max(ConfigItem.version)` from watch semantics.
-- [ ] Add tests for:
+- [x] Design the minimal namespace revision entity/repository/service.
+- [x] Advance revision atomically inside configuration write transactions.
+- [x] Notify watchers after commit with the committed revision.
+- [x] Remove use of `max(ConfigItem.version)` from watch semantics.
+- [x] Add tests for:
   - initial revision
   - first upsert
   - repeated update
@@ -161,7 +161,7 @@ Required behavior:
   - timeout without change
   - immediate return when revision is already newer
   - waiting client notification
-- [ ] Update `examples.http`.
+- [x] Update `examples.http`.
 
 ### Acceptance criteria
 

@@ -292,7 +292,7 @@ GET http://localhost:8080/actuator/prometheus
 ### 看限流指标，有没有被拦过一眼就知道
 GET http://localhost:8080/actuator/metrics/config_center_rate_limit_blocked_total
 
-### watch configs（长轮询版本）
+### watch configs（sinceVersion/latestVersion 表示 app/env 命名空间修订号，不是单个配置项版本）
 GET http://localhost:8080/api/configs/watch?app=demo-app&env=dev&sinceVersion=0&timeoutSeconds=10
 
 ### 带 API Key 的安全更新，这条才是写接口的标准姿势
