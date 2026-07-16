@@ -169,7 +169,9 @@ Business key:
 app + env
 ```
 
-The persistent `revision` is the monotonic watch cursor for the namespace. It advances once inside every successful configuration upsert or rollback transaction. A pessimistic write lock serializes updates to an existing namespace row, and watchers are notified only after commit.
+The persistent `revision` is the monotonic watch cursor for the namespace. It advances once inside every successful configuration upsert or rollback transaction. A pessimistic database write lock serializes updates to an existing namespace row, and watchers are notified only after commit.
+
+First-row creation is additionally protected by `NamespaceRevisionLock`, a fixed array of 64 JVM-local `ReentrantLock` stripes selected from the `(app, env)` hash. The stripe is acquired before the revision-row lookup and released from transaction `afterCompletion`, so a second local transaction cannot query before the first insert commits or rolls back. Hash collisions may serialize unrelated namespaces but the lock count stays bounded. The database `(app, env)` unique constraint remains the final data invariant; no `REQUIRES_NEW` transaction is used.
 
 ### Current Feature Flag
 

@@ -8,6 +8,7 @@ import com.example.configcenter.repository.ConfigItemRepository;
 import com.example.configcenter.repository.ConfigNamespaceRevisionRepository;
 import com.example.configcenter.service.ConfigService;
 import com.example.configcenter.service.ConfigWatchNotifier;
+import com.example.configcenter.service.NamespaceRevisionLock;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,10 +26,18 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
@@ -70,12 +79,15 @@ class ConfigWatchIntegrationTest {
     @SpyBean
     private ConfigWatchNotifier notifier;
 
+    @SpyBean
+    private NamespaceRevisionLock namespaceLock;
+
     @BeforeEach
     void cleanup() {
         historyRepository.deleteAll();
         itemRepository.deleteAll();
         revisionRepository.deleteAll();
-        clearInvocations(notifier);
+        clearInvocations(notifier, namespaceLock);
     }
 
     @Test
@@ -132,6 +144,82 @@ class ConfigWatchIntegrationTest {
         assertEquals(0, service.latestVersion("app", "dev"));
         assertEquals(0, itemRepository.count());
         verify(notifier, never()).notifyChanged(eq("app"), eq("dev"), anyLong());
+    }
+
+    @Test
+    void concurrentFirstWrites_areSerializedAndReachRevisionTwo() throws Exception {
+        CountDownLatch bothAtNamespaceLock = new CountDownLatch(2);
+        AtomicInteger interceptedCalls = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (interceptedCalls.incrementAndGet() <= 2) {
+                bothAtNamespaceLock.countDown();
+                if (!bothAtNamespaceLock.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("concurrent writes did not reach namespace lock together");
+                }
+            }
+            invocation.callRealMethod();
+            return null;
+        }).when(namespaceLock).lockUntilTransactionCompletion("app", "dev");
+
+        MvcResult firstWatcher = startWatch("app", "dev", "first-write-watch", 5);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first = executor.submit(() -> service.upsert(config("first", "v1")));
+            Future<?> second = executor.submit(() -> service.upsert(config("second", "v2")));
+
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(2, itemRepository.count());
+        assertEquals(2, historyRepository.count());
+        assertEquals(2, revisionRepository.findByAppAndEnv("app", "dev").orElseThrow().getRevision());
+        verify(notifier).notifyChanged("app", "dev", 1);
+        verify(notifier).notifyChanged("app", "dev", 2);
+
+        firstWatcher.getAsyncResult(2_000);
+        assertWatchChanged(firstWatcher, "first-write-watch", 1);
+
+        MvcResult finalWatcher = startWatchSince("app", "dev", 1, "second-write-watch", 5);
+        finalWatcher.getAsyncResult(2_000);
+        assertWatchChanged(finalWatcher, "second-write-watch", 2);
+    }
+
+    @Test
+    void uncommittedRevision_isInvisibleAndDoesNotNotify() throws Exception {
+        CountDownLatch writePrepared = new CountDownLatch(1);
+        CountDownLatch allowCommit = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> write;
+        try {
+            write = executor.submit(() -> transactionTemplate.executeWithoutResult(status -> {
+                service.upsert(config("pending", "v1"));
+                writePrepared.countDown();
+                try {
+                    if (!allowCommit.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("test did not release pending transaction");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+            }));
+
+            if (!writePrepared.await(5, TimeUnit.SECONDS)) {
+                throw new AssertionError("write did not reach pre-commit checkpoint");
+            }
+            assertEquals(0, service.latestVersion("app", "dev"));
+            verify(notifier, never()).notifyChanged(eq("app"), eq("dev"), anyLong());
+        } finally {
+            allowCommit.countDown();
+            executor.shutdown();
+        }
+
+        write.get(10, TimeUnit.SECONDS);
+        assertEquals(1, service.latestVersion("app", "dev"));
+        verify(notifier).notifyChanged("app", "dev", 1);
     }
 
     @Test
@@ -238,10 +326,16 @@ class ConfigWatchIntegrationTest {
 
     private MvcResult startWatch(String app, String env, String traceId, int timeoutSeconds)
             throws Exception {
+        return startWatchSince(app, env, 0, traceId, timeoutSeconds);
+    }
+
+    private MvcResult startWatchSince(
+            String app, String env, long sinceVersion, String traceId, int timeoutSeconds)
+            throws Exception {
         return mockMvc.perform(get("/api/configs/watch")
                         .param("app", app)
                         .param("env", env)
-                        .param("sinceVersion", "0")
+                        .param("sinceVersion", Long.toString(sinceVersion))
                         .param("timeoutSeconds", Integer.toString(timeoutSeconds))
                         .header(TraceIdFilter.HEADER, traceId))
                 .andExpect(request().asyncStarted())

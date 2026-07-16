@@ -564,3 +564,57 @@ Keep caller errors out of service-availability state and restrict stale-cache fa
 
 - `docs/config-center-dev-plan-v2.md`: Phase 6C
 - `docs/dev-plan.md`: `P1-CLIENT-BREAKER`
+
+---
+
+## 2026-07-16 — Complete Phase 6D namespace first-write concurrency
+
+### Goal
+
+Guarantee that two concurrent first writes to one local `app/env` namespace both commit and advance one monotonic revision sequence.
+
+### Changes
+
+- Added a fixed 64-stripe JVM-local namespace lock without an unbounded key registry.
+- Acquired the stripe before revision-row lookup and held it until transaction `afterCompletion`, covering both commit and rollback.
+- Preserved the existing database pessimistic lock for revision rows and the `(app, env)` unique constraint.
+- Added deterministic integration coverage that synchronizes two first writes immediately before lock acquisition.
+- Verified both writes, two current rows, two history rows, final revision 2, and watch notifications for revisions 1 and 2.
+- Added a pre-commit visibility test proving an uncommitted revision is neither readable nor notified, while retaining the rollback regression.
+
+### Files changed
+
+- `config-center-server/src/main/java/com/example/configcenter/service/NamespaceRevisionLock.java`
+- `config-center-server/src/main/java/com/example/configcenter/service/ConfigNamespaceRevisionService.java`
+- `config-center-server/src/test/java/com/example/configcenter/ConfigWatchIntegrationTest.java`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-dev-plan-v2.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server -Dtest=ConfigWatchIntegrationTest test`
+- Result: passed; 12 tests, 0 failures, 0 errors, and 0 skipped tests.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 40 tests and client 25 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API impact: none.
+- Data-schema impact: none.
+- Transaction impact: no independent transaction was added; configuration, history, revision, and after-commit notification retain one logical transaction boundary.
+
+### Residual risks
+
+- The stripes coordinate only one JVM; a future multi-instance deployment would need a database-portable cross-instance creation strategy while retaining the unique constraint.
+- Hash collisions can serialize unrelated namespaces, intentionally trading some concurrency for a fixed memory bound.
+- Lock release relies on the current imperative, thread-bound Spring transaction model; reactive or thread-hopping transactions are outside this project baseline.
+
+### Related plan items
+
+- `docs/config-center-dev-plan-v2.md`: Phase 6D
+- `docs/dev-plan.md`: `P1-NAMESPACE-FIRST-WRITE`

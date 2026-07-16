@@ -350,7 +350,7 @@ git diff --check
 
 ---
 
-## Phase 6D — Namespace first-write concurrency `[ ]`
+## Phase 6D — Namespace first-write concurrency `[x]`
 
 ### Goal
 
@@ -381,15 +381,15 @@ For the current single-process baseline:
 
 ### Tasks
 
-- [ ] Add a deterministic concurrent first-write integration test.
-- [ ] Verify both writes succeed.
-- [ ] Verify two current rows and two history rows exist.
-- [ ] Verify namespace revision equals 2.
-- [ ] Verify watchers observe the committed revision.
-- [ ] Implement bounded/striped first-creation serialization.
-- [ ] Reverify rollback behavior.
-- [ ] Document the exact locking model.
-- [ ] Update patch log.
+- [x] Add a deterministic concurrent first-write integration test.
+- [x] Verify both writes succeed.
+- [x] Verify two current rows and two history rows exist.
+- [x] Verify namespace revision equals 2.
+- [x] Verify watchers observe the committed revision.
+- [x] Implement bounded/striped first-creation serialization.
+- [x] Reverify rollback behavior.
+- [x] Document the exact locking model.
+- [x] Update patch log.
 
 ### Acceptance criteria
 

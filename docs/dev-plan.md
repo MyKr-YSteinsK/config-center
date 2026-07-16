@@ -329,6 +329,17 @@ Add new defects below before assigning them to a phase.
 - Verification: direct deterministic tests cover CLOSED, OPEN, and HALF_OPEN transitions; repeated 403/404 keep the breaker closed; repeated 429 and circuit-open rejection cannot use stale cache; existing 5xx/network retry and exhausted-transient fallback remain covered. Focused and full Maven verification passed on 2026-07-16.
 - Status: resolved in Phase 6C.
 
+### P1-NAMESPACE-FIRST-WRITE — Concurrent first writes could collide on revision creation
+
+- Severity: P1
+- Evidence: the pessimistic revision-row query cannot lock a row that does not exist, allowing two transactions to attempt the same unique `(app, env)` insert.
+- Consequence: one otherwise valid write could fail, leaving only one current row/history entry and an incomplete namespace revision.
+- Proposed phase: Phase 6D in `docs/config-center-dev-plan-v2.md`.
+- Likely files: namespace revision service, a bounded local lock component, watch/concurrency integration tests, and project docs.
+- API/data impact: no API or schema change; concurrent first-write reliability is corrected for the single-process baseline.
+- Verification: two synchronized first writes to different keys both commit, produce two current and history rows, advance revision to 2, and notify watchers with committed revisions; a held transaction exposes neither its revision nor notification before commit; rollback behavior remains covered. Focused and full Maven verification passed on 2026-07-16.
+- Status: resolved in Phase 6D.
+
 ```markdown
 ### ISSUE-ID — concise title
 

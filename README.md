@@ -186,6 +186,8 @@ Configuration-list data and its weak ETag are generated from one ordered in-memo
 
 Configuration watch requires `sinceVersion >= 0` and `timeoutSeconds` within `1..60`. Each completed long-poll response preserves its own request trace ID in both the `X-Trace-Id` header and JSON body, including timeout and write-triggered notification paths.
 
+Within one server process, concurrent first writes to different keys in the same `app + env` namespace are serialized through a bounded 64-stripe lock, so both writes commit with distinct history rows and a monotonic namespace revision.
+
 ## Main configuration
 
 | Setting | Default | Meaning |

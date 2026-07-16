@@ -10,13 +10,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConfigNamespaceRevisionService {
 
     private final ConfigNamespaceRevisionRepository repository;
+    private final NamespaceRevisionLock namespaceLock;
 
-    public ConfigNamespaceRevisionService(ConfigNamespaceRevisionRepository repository) {
+    public ConfigNamespaceRevisionService(
+            ConfigNamespaceRevisionRepository repository,
+            NamespaceRevisionLock namespaceLock) {
         this.repository = repository;
+        this.namespaceLock = namespaceLock;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public long advance(String app, String env) {
+        namespaceLock.lockUntilTransactionCompletion(app, env);
         ConfigNamespaceRevision namespace = repository.findForUpdate(app, env)
                 .orElseGet(() -> newNamespace(app, env));
         namespace.setRevision(namespace.getRevision() + 1);
