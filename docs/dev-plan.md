@@ -373,6 +373,17 @@ Add new defects below before assigning them to a phase.
 - Verification: focused tests cover `&`, `+`, `/`, and `?` query values; missing, mistyped, malformed, nonzero-code, and out-of-range response fields; atomic-move fallback; injected replacement failure; and concurrent writes. Full Maven verification passed on 2026-07-16.
 - Status: resolved in Phase 7C.
 
+### P1-FEATURE-WRITE-AUTH — Feature Flag control-plane writes bypassed the existing API Key model
+
+- Severity: P1
+- Evidence: configuration upsert/rollback required `X-API-Key`, while Feature Flag upsert/rollback called their service directly; API Key entries also accepted blank values and the default key lacked a simple environment-variable override.
+- Consequence: callers could mutate Feature Flags without the app/env authorization required for configuration changes, and invalid security configuration could fail unpredictably at request time.
+- Proposed phase: Phase 8A in `docs/config-center-dev-plan-v2.md`.
+- Likely files: Feature Flag controller, API Key properties, application configuration, controller/configuration tests, examples, and project docs.
+- API/data impact: Feature Flag write callers must now send an authorized `X-API-Key`; read, history, and evaluation APIs remain anonymous. No schema or data migration is required.
+- Verification: missing and wrong keys return HTTP 403/code 4031 for both Feature Flag writes without service invocation; the authorized key succeeds; all Feature Flag reads remain anonymous; blank/oversized API Key mappings fail Bean Validation; and `CONFIG_CENTER_API_KEY` overrides the development key. Focused and full Maven verification passed on 2026-07-16.
+- Status: resolved in Phase 8A.
+
 ```markdown
 ### ISSUE-ID — concise title
 

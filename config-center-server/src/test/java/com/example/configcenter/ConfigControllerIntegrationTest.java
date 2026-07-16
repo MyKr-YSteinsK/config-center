@@ -2,6 +2,8 @@ package com.example.configcenter;
 
 import com.example.configcenter.config.TraceIdFilter;
 import com.example.configcenter.dto.response.ConfigItemDto;
+import com.example.configcenter.dto.response.FeatureEvalResult;
+import com.example.configcenter.dto.response.FeatureFlagDto;
 import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.ConfigService;
 import com.example.configcenter.service.FeatureFlagService;
@@ -42,6 +44,13 @@ class ConfigControllerIntegrationTest {
             """;
     private static final String VALID_ROLLBACK = """
             {"app":"demo-app","env":"dev","key":"sample.key","targetVersion":1}
+            """;
+    private static final String VALID_FEATURE = """
+            {"app":"demo-app","env":"dev","name":"new-checkout","enabled":true,
+             "rolloutPercentage":30,"allowlist":["u1000"]}
+            """;
+    private static final String VALID_FEATURE_ROLLBACK = """
+            {"app":"demo-app","env":"dev","name":"new-checkout","targetVersion":1}
             """;
 
     @Autowired
@@ -244,6 +253,99 @@ class ConfigControllerIntegrationTest {
                 .andExpect(jsonPath("$.code").value(0));
     }
 
+    @Test
+    void featureWrites_missingApiKeyReturn403() throws Exception {
+        mockMvc.perform(post("/api/features")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_FEATURE))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(4031));
+
+        mockMvc.perform(post("/api/features/rollback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_FEATURE_ROLLBACK))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(4031));
+
+        verifyNoInteractions(featureFlagService);
+    }
+
+    @Test
+    void featureWrites_unauthorizedApiKeyReturn403() throws Exception {
+        mockMvc.perform(post("/api/features")
+                        .header("X-API-Key", "wrong-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_FEATURE))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(4031));
+
+        mockMvc.perform(post("/api/features/rollback")
+                        .header("X-API-Key", "wrong-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_FEATURE_ROLLBACK))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(4031));
+
+        verifyNoInteractions(featureFlagService);
+    }
+
+    @Test
+    void featureWrites_allowedApiKeyReachService() throws Exception {
+        allowConfigWrites();
+        when(featureFlagService.upsert(any())).thenReturn(featureDto());
+        when(featureFlagService.rollback(any())).thenReturn(featureDto());
+
+        mockMvc.perform(post("/api/features")
+                        .header("X-API-Key", "kr-dev-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_FEATURE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.name").value("new-checkout"));
+
+        mockMvc.perform(post("/api/features/rollback")
+                        .header("X-API-Key", "kr-dev-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_FEATURE_ROLLBACK))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.name").value("new-checkout"));
+    }
+
+    @Test
+    void featureReadsAndEvaluation_remainUnauthenticated() throws Exception {
+        when(featureFlagService.list("demo-app", "dev")).thenReturn(Collections.emptyList());
+        when(featureFlagService.history("demo-app", "dev", "new-checkout"))
+                .thenReturn(Collections.emptyList());
+        when(featureFlagService.evaluate("demo-app", "dev", "new-checkout", "u1000"))
+                .thenReturn(new FeatureEvalResult(
+                        "new-checkout", "u1000", true, -1, "allowlist 命中"));
+
+        mockMvc.perform(get("/api/features")
+                        .param("app", "demo-app")
+                        .param("env", "dev"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(get("/api/features/history")
+                        .param("app", "demo-app")
+                        .param("env", "dev")
+                        .param("name", "new-checkout"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        mockMvc.perform(get("/api/features/evaluate")
+                        .param("app", "demo-app")
+                        .param("env", "dev")
+                        .param("name", "new-checkout")
+                        .param("userId", "u1000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.enabled").value(true));
+
+        verifyNoInteractions(apiKeyService);
+    }
+
     private void allowConfigWrites() {
         when(apiKeyService.allow("kr-dev-key", "demo-app", "dev")).thenReturn(true);
     }
@@ -263,5 +365,11 @@ class ConfigControllerIntegrationTest {
 
     private ConfigItemDto configDto() {
         return new ConfigItemDto("demo-app", "dev", "sample.key", "value", null, 1, Instant.now());
+    }
+
+    private FeatureFlagDto featureDto() {
+        return new FeatureFlagDto(
+                "demo-app", "dev", "new-checkout", true, 30,
+                Collections.singletonList("u1000"), Instant.now(), 1);
     }
 }

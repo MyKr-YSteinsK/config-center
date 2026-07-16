@@ -92,8 +92,8 @@ Content-Type: application/json
 GET {{baseUrl}}/api/configs/watch?app=demo-app&env=dev&sinceVersion=0&timeoutSeconds=1
 
 ### Create Feature Flag: HTTP 200, version=1 on a fresh server
-### Current scope deliberately does not require an API Key for Feature Flag writes.
 POST {{baseUrl}}/api/features
+X-API-Key: {{apiKey}}
 Content-Type: application/json
 
 {
@@ -119,8 +119,9 @@ GET {{baseUrl}}/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&use
 ### Read Feature Flag history
 GET {{baseUrl}}/api/features/history?app=demo-app&env=dev&name=new-checkout
 
-### Roll back Feature Flag version 1 as a new version
+### Roll back Feature Flag version 1 as a new version; API Key is required
 POST {{baseUrl}}/api/features/rollback
+X-API-Key: {{apiKey}}
 Content-Type: application/json
 
 {

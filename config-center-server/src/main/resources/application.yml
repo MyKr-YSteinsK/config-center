@@ -43,6 +43,6 @@ logging:
 
 security:
   api-keys:
-    - key: kr-dev-key
+    - key: ${CONFIG_CENTER_API_KEY:kr-dev-key}
       app: demo-app
       env: dev

@@ -219,11 +219,11 @@ Behavior mirrors configuration history.
 
 ### Feature Flag
 
-- `POST /api/features` (no write authorization in the current scope)
+- `POST /api/features` (`X-API-Key` required)
 - `GET /api/features`
 - `GET /api/features/evaluate`
 - `GET /api/features/history`
-- `POST /api/features/rollback` (no write authorization in the current scope)
+- `POST /api/features/rollback` (`X-API-Key` required)
 
 ### Operations
 
@@ -270,7 +270,7 @@ request
 
 ### Write authorization scope
 
-During Phase 1, API Key authorization applies only to configuration upsert and rollback. Feature Flag write endpoints deliberately remain outside this minimal authorization scope; expanding them requires a separate security decision and patch.
+Configuration and Feature Flag upsert/rollback endpoints use the same lightweight API Key mapping from key to authorized `app/env`. Missing or unauthorized keys return HTTP 403/code `4031`; list, history, watch, and Feature Flag evaluation remain unauthenticated. API Key entries require non-blank key/app/env values, with app/env lengths matching request boundaries. The default development key can be replaced through `CONFIG_CENTER_API_KEY`.
 
 ### Feature evaluation
 
@@ -340,7 +340,7 @@ Server defaults:
 - Rate-limit capacity and bucket limits must be positive; refill rate must be non-negative
 - Micrometer meter `config_center_rate_limit_blocked` is a FunctionCounter; Prometheus exports it as `config_center_rate_limit_blocked_total`
 - Actuator exposes health, info, metrics, and Prometheus
-- One local API Key mapping: `kr-dev-key` -> `demo-app/dev`
+- One local API Key mapping: `${CONFIG_CENTER_API_KEY:kr-dev-key}` -> `demo-app/dev`
 
 Client defaults:
 
@@ -356,7 +356,7 @@ Client defaults:
 The stabilization phases are complete. The remaining limits are explicit product boundaries, not claims of implemented functionality:
 
 - H2 data is in-memory and there is no Flyway or production database migration path.
-- The local API Key is plaintext; Feature Flag writes remain deliberately unauthenticated.
+- The local API Key model is plaintext configuration for learning use and has no accounts, roles, JWT, or tenant model.
 - Rate-limit buckets and long-poll waiters are process-local and do not coordinate across server instances.
 - The client is a CLI demonstration rather than a published SDK; its package remains `com.example.democlient`.
 - The JSON disk cache has no encryption or cross-process locking.

@@ -6,6 +6,9 @@ import com.example.configcenter.dto.request.UpsertFeatureRequest;
 import com.example.configcenter.dto.response.FeatureEvalResult;
 import com.example.configcenter.dto.response.FeatureFlagDto;
 import com.example.configcenter.dto.response.FeatureHistoryDto;
+import com.example.configcenter.exception.BizException;
+import com.example.configcenter.exception.ErrorCode;
+import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.FeatureFlagService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -21,13 +24,18 @@ import java.util.List;
 public class FeatureController {
 
     private final FeatureFlagService service;
+    private final ApiKeyService apiKeyService;
 
-    public FeatureController(FeatureFlagService service) {
+    public FeatureController(FeatureFlagService service, ApiKeyService apiKeyService) {
         this.service = service;
+        this.apiKeyService = apiKeyService;
     }
 
     @PostMapping
-    public ApiResponse<FeatureFlagDto> upsert(@Valid @RequestBody UpsertFeatureRequest req) {
+    public ApiResponse<FeatureFlagDto> upsert(
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @Valid @RequestBody UpsertFeatureRequest req) {
+        authorize(apiKey, req.getApp(), req.getEnv());
         return ApiResponse.ok(service.upsert(req));
     }
 
@@ -59,7 +67,15 @@ public class FeatureController {
     // 这里的回滚思路和配置项一致：不是把旧记录改回来，而是生成一条新的当前版本。
     @PostMapping("/rollback")
     public ApiResponse<FeatureFlagDto> rollback(
+            @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @Valid @RequestBody RollbackFeatureRequest req) {
+        authorize(apiKey, req.getApp(), req.getEnv());
         return ApiResponse.ok(service.rollback(req));
+    }
+
+    private void authorize(String apiKey, String app, String env) {
+        if (!apiKeyService.allow(apiKey, app, env)) {
+            throw new BizException(ErrorCode.FORBIDDEN, "API Key 无权限，当前 app/env 不允许写入");
+        }
     }
 }

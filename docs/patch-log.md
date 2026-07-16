@@ -792,3 +792,60 @@ Preserve request meaning for special characters, reject malformed successful res
 
 - `docs/config-center-dev-plan-v2.md`: Phase 7C
 - `docs/dev-plan.md`: `P1-CLIENT-PROTOCOL-CACHE`
+
+---
+
+## 2026-07-16 — Complete Phase 8A Feature Flag write authorization
+
+### Goal
+
+Apply the existing lightweight app/env API Key rule consistently to all configuration and Feature Flag control-plane writes.
+
+### Changes
+
+- Required `X-API-Key` on Feature Flag upsert and rollback and reused `ApiKeyService` with each request's `app/env`.
+- Preserved anonymous Feature Flag list, history, and evaluation endpoints.
+- Added nested Bean Validation for API Key entries: key/app/env must be non-blank and app/env must respect request-size limits.
+- Added the `CONFIG_CENTER_API_KEY` environment placeholder while retaining `kr-dev-key` as the local default.
+- Added MockMvc coverage for allowed, missing, and unauthorized Feature Flag writes plus unchanged anonymous reads.
+- Updated the runnable HTTP examples, README demonstration/API table, project map, and phase status.
+
+### Files changed
+
+- `config-center-server/src/main/java/com/example/configcenter/config/ApiKeyProperties.java`
+- `config-center-server/src/main/java/com/example/configcenter/controller/FeatureController.java`
+- `config-center-server/src/main/resources/application.yml`
+- `config-center-server/src/test/java/com/example/configcenter/ConfigControllerIntegrationTest.java`
+- `config-center-server/src/test/java/com/example/configcenter/config/ApiKeyPropertiesTest.java`
+- `examples.http`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-dev-plan-v2.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server '-Dtest=ConfigControllerIntegrationTest,ApiKeyPropertiesTest' test`
+- Result: passed; 18 tests, 0 failures, 0 errors, and 0 skipped tests.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 53 tests and client 31 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- Breaking behavior: `POST /api/features` and `POST /api/features/rollback` now require an API Key authorized for the request's `app/env`.
+- Configuration write authorization and all read/evaluation paths are unchanged.
+- API paths, successful JSON fields, persistence schema, and existing data are unchanged.
+
+### Residual risks
+
+- The local default key remains available for a zero-setup demonstration; non-local runs must override it and protect the resulting environment/configuration source.
+- The lightweight model stores plaintext shared keys and does not provide rotation, identity, roles, audit principals, or constant-time comparison.
+- Multiple configured entries are validated structurally but duplicate keys or overlapping mappings are not rejected.
+
+### Related plan items
+
+- `docs/config-center-dev-plan-v2.md`: Phase 8A
+- `docs/dev-plan.md`: `P1-FEATURE-WRITE-AUTH`

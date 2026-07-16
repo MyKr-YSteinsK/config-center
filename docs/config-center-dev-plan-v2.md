@@ -520,7 +520,7 @@ Goal: apply the existing lightweight app/env API Key model consistently to all c
 
 Do not expand this phase into RBAC, JWT, account management, or multi-tenancy.
 
-## Phase 8A — Feature Flag write authorization `[ ]`
+## Phase 8A — Feature Flag write authorization `[x]`
 
 ### Target behavior
 
@@ -533,13 +533,13 @@ Keep Feature Flag reads and evaluation unauthenticated.
 
 ### Tasks
 
-- [ ] Reuse `ApiKeyService` in Feature Flag write endpoints.
-- [ ] Add allowed, missing, and unauthorized tests.
-- [ ] Update `examples.http`.
-- [ ] Update README API table and demonstration.
-- [ ] Update project map and patch log.
-- [ ] Allow the development key to be overridden through external configuration or environment variables.
-- [ ] Validate API-key configuration entries.
+- [x] Reuse `ApiKeyService` in Feature Flag write endpoints.
+- [x] Add allowed, missing, and unauthorized tests.
+- [x] Update `examples.http`.
+- [x] Update README API table and demonstration.
+- [x] Update project map and patch log.
+- [x] Allow the development key to be overridden through external configuration or environment variables.
+- [x] Validate API-key configuration entries.
 
 ### Acceptance criteria
 

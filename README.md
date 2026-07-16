@@ -79,7 +79,7 @@ The default port is `8080`. Important local endpoints:
 
 ## Verified local demonstration
 
-The following PowerShell sequence assumes a freshly started server using the deterministic command above. The default development API Key authorizes configuration writes only for `demo-app/dev`.
+The following PowerShell sequence assumes a freshly started server using the deterministic command above. The default development API Key authorizes configuration and Feature Flag writes for `demo-app/dev`. Set `CONFIG_CENTER_API_KEY` before starting the server to replace the default key.
 
 ```powershell
 $base = "http://localhost:8080"
@@ -124,6 +124,7 @@ $featureBody = @{
 
 $feature = Invoke-RestMethod -Method Post `
   -Uri "$base/api/features" `
+  -Headers $writeHeaders `
   -ContentType "application/json" `
   -Body $featureBody
 
@@ -176,11 +177,11 @@ Client query values are percent-encoded before requests. Fresh HTTP 200 response
 | `GET` | `/api/configs/history` | none | Read configuration history |
 | `POST` | `/api/configs/rollback` | `X-API-Key` | Restore a snapshot as a new version |
 | `GET` | `/api/configs/watch` | none | Long-poll a namespace revision |
-| `POST` | `/api/features` | none | Create or update a Feature Flag |
+| `POST` | `/api/features` | `X-API-Key` | Create or update a Feature Flag |
 | `GET` | `/api/features` | none | List Feature Flags |
 | `GET` | `/api/features/evaluate` | none | Evaluate one user |
 | `GET` | `/api/features/history` | none | Read Feature Flag history |
-| `POST` | `/api/features/rollback` | none | Restore a Feature Flag snapshot as a new version |
+| `POST` | `/api/features/rollback` | `X-API-Key` | Restore a Feature Flag snapshot as a new version |
 
 All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching ETag requests return HTTP 304 without a JSON body. See `examples.http` for ready-to-run requests.
 
@@ -204,14 +205,14 @@ The local rate limiter groups requests by source address, HTTP method, and match
 | `rate-limit.capacity` | `5` | Initial token-bucket capacity |
 | `rate-limit.refill-per-second` | `5` | Token refill rate |
 | `rate-limit.max-buckets` | `256` | Maximum process-local rate-limit buckets; least-recently-used entries are evicted |
-| `security.api-keys` | one `demo-app/dev` key | Configuration write authorization mappings |
+| `security.api-keys` | one `demo-app/dev` key | Configuration and Feature Flag write authorization mappings; default key can be replaced with `CONFIG_CENTER_API_KEY` |
 | `demo.http.*` | `800/3000 ms` | Client connect/read timeouts |
 | `demo.watch.*` | `10 s + 2000 ms margin`, 5 rounds | Client long-poll settings |
 
 ## Known limits
 
 - H2 is in-memory and uses Hibernate `ddl-auto=update`; there is no production database migration path yet.
-- The configured API Key is plaintext and intended only for local learning. Feature Flag writes are deliberately unauthenticated in the current scope.
+- The configured API Key is plaintext and intended only for local learning; it is not a replacement for secret management or user authentication.
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.
 - The client is a demonstration CLI, not a published SDK, and its Java package still uses the legacy name `com.example.democlient`.
 - The cache is a user-home JSON file without encryption or cross-process locking.
