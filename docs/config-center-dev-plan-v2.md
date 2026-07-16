@@ -433,17 +433,17 @@ git diff --check
 
 Goal: improve boundary validation and local operational safety after Phase 6.
 
-## Phase 7A — Request validation and exception hygiene `[ ]`
+## Phase 7A — Request validation and exception hygiene `[x]`
 
 ### Tasks
 
-- [ ] Add `@Size` constraints matching entity limits.
-- [ ] Add `@Positive` for target and expected versions where appropriate.
-- [ ] Validate allowlist count, blank items, and item length.
-- [ ] Handle `MethodArgumentTypeMismatchException`.
-- [ ] Log unknown exceptions with traceId and full server-side stack trace.
-- [ ] Keep external system-error responses stable and non-sensitive.
-- [ ] Add controller tests.
+- [x] Add `@Size` constraints matching entity limits.
+- [x] Add `@Positive` for target and expected versions where appropriate.
+- [x] Validate allowlist count, blank items, and item length.
+- [x] Handle `MethodArgumentTypeMismatchException`.
+- [x] Log unknown exceptions with traceId and full server-side stack trace.
+- [x] Keep external system-error responses stable and non-sensitive.
+- [x] Add controller tests.
 
 ### Acceptance criteria
 

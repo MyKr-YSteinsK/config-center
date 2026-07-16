@@ -123,6 +123,10 @@ GlobalExceptionHandler -> unified error body
 Actuator / Micrometer -> health and metrics endpoints
 ```
 
+Request boundaries mirror persistence limits: `app` is at most 100 characters, `env` 50, configuration/feature keys 200, configuration values 2000, descriptions/reasons 500, and operators 100. Expected and rollback target versions must be positive. Feature allowlists accept at most 20 non-blank entries of at most 32 characters each, keeping worst-case JSON escaping within the 4000-character column.
+
+Validation failures, missing parameters, malformed JSON, and query type mismatches return HTTP 400 with code `4001`. Unknown exceptions are logged server-side with the request trace ID and full stack trace, while the external HTTP 500 body remains the stable, non-sensitive code `5000` / message `系统异常` envelope.
+
 ## 5. Current domain model
 
 ### Current configuration
@@ -192,7 +196,7 @@ Important fields:
 - `lockVersion`
 - `updatedAt`
 
-The allowlist is currently stored as JSON in one column. Keep this design during stabilization.
+The allowlist is currently stored as JSON in one column. API validation bounds it to 20 non-blank entries of 32 characters each so even worst-case escaped content fits the 4000-character column.
 
 ### Feature history
 

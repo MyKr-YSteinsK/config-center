@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
@@ -14,12 +16,15 @@ import java.util.List;
 public class UpsertFeatureRequest {
 
     @NotBlank
+    @Size(max = 100)
     private String app;
 
     @NotBlank
+    @Size(max = 50)
     private String env;
 
     @NotBlank
+    @Size(max = 200)
     private String name;
 
     @NotNull
@@ -30,11 +35,16 @@ public class UpsertFeatureRequest {
     @Max(100)
     private Integer rolloutPercentage;
 
-    private List<String> allowlist;
+    @Size(max = 20)
+    private List<@NotBlank @Size(max = 32) String> allowlist;
 
+    @Positive
     private Long expectedVersion;
 
+    @Size(max = 100)
     private String operator;
+
+    @Size(max = 500)
     private String reason;
 
     public String getApp() { return app; }

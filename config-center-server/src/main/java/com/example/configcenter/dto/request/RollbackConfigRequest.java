@@ -2,6 +2,8 @@ package com.example.configcenter.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 
 /**
  * 配置回滚请求。
@@ -10,18 +12,25 @@ import jakarta.validation.constraints.NotNull;
 public class RollbackConfigRequest {
 
     @NotBlank
+    @Size(max = 100)
     private String app;
 
     @NotBlank
+    @Size(max = 50)
     private String env;
 
     @NotBlank
+    @Size(max = 200)
     private String key;
 
     @NotNull
+    @Positive
     private Long targetVersion;
 
+    @Size(max = 100)
     private String operator;
+
+    @Size(max = 500)
     private String reason;
 
     public String getApp() { return app; }

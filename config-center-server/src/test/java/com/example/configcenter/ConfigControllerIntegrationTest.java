@@ -1,21 +1,31 @@
 package com.example.configcenter;
 
+import com.example.configcenter.config.TraceIdFilter;
 import com.example.configcenter.dto.response.ConfigItemDto;
 import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.ConfigService;
+import com.example.configcenter.service.FeatureFlagService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.Instant;
+import java.util.Collections;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -24,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = "rate-limit.enabled=false")
 @AutoConfigureMockMvc
+@ExtendWith(OutputCaptureExtension.class)
 class ConfigControllerIntegrationTest {
 
     private static final String VALID_CONFIG = """
@@ -41,6 +52,9 @@ class ConfigControllerIntegrationTest {
 
     @MockBean
     private ApiKeyService apiKeyService;
+
+    @MockBean
+    private FeatureFlagService featureFlagService;
 
     @Test
     void bodyValidation_returns400WithParameterCode() throws Exception {
@@ -68,6 +82,91 @@ class ConfigControllerIntegrationTest {
                         .content("{invalid"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4001));
+    }
+
+    @Test
+    void oversizedAndNonPositiveConfigFields_return400BeforeService() throws Exception {
+        String oversizedValue = "x".repeat(2001);
+        String oversizedBody = """
+                {"app":"demo-app","env":"dev","key":"sample.key","value":"%s"}
+                """.formatted(oversizedValue);
+        String invalidExpectedVersion = """
+                {"app":"demo-app","env":"dev","key":"sample.key","value":"value","expectedVersion":0}
+                """;
+        String invalidTargetVersion = """
+                {"app":"demo-app","env":"dev","key":"sample.key","targetVersion":0}
+                """;
+
+        for (String body : new String[]{oversizedBody, invalidExpectedVersion}) {
+            mockMvc.perform(post("/api/configs")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(4001));
+        }
+        mockMvc.perform(post("/api/configs/rollback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(invalidTargetVersion))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4001));
+
+        verifyNoInteractions(configService);
+    }
+
+    @Test
+    void featureAllowlistBoundsAndItems_return400BeforeService() throws Exception {
+        String tooManyItems = String.join(",", Collections.nCopies(21, "\"user\""));
+        String blankItem = featureBody("\" \"");
+        String oversizedItem = featureBody("\"" + "x".repeat(33) + "\"");
+        String oversizedList = featureBody(tooManyItems);
+
+        for (String body : new String[]{blankItem, oversizedItem, oversizedList}) {
+            mockMvc.perform(post("/api/features")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(4001));
+        }
+
+        verifyNoInteractions(featureFlagService);
+    }
+
+    @Test
+    void numericQueryTypeMismatch_returns400() throws Exception {
+        mockMvc.perform(get("/api/configs/watch")
+                        .param("app", "app")
+                        .param("env", "dev")
+                        .param("sinceVersion", "not-a-number"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4001))
+                .andExpect(jsonPath("$.message").value("请求参数类型错误: sinceVersion"));
+    }
+
+    @Test
+    void unknownException_logsTraceAndStackButReturnsStableBody(CapturedOutput output)
+            throws Exception {
+        allowConfigWrites();
+        when(configService.upsert(any()))
+                .thenThrow(new IllegalStateException("sensitive-internal-message"));
+
+        MvcResult result = mockMvc.perform(post("/api/configs")
+                        .header("X-API-Key", "kr-dev-key")
+                        .header(TraceIdFilter.HEADER, "unknown-error-trace")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_CONFIG))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value(5000))
+                .andExpect(jsonPath("$.message").value("系统异常"))
+                .andExpect(jsonPath("$.traceId").value("unknown-error-trace"))
+                .andReturn();
+
+        String responseBody = result.getResponse().getContentAsString();
+        assertFalse(responseBody.contains("sensitive-internal-message"));
+        assertFalse(responseBody.contains("IllegalStateException"));
+        assertTrue(output.getAll().contains("unknown-error-trace"));
+        assertTrue(output.getAll().contains(
+                "java.lang.IllegalStateException: sensitive-internal-message"));
+        assertTrue(output.getAll().contains("ConfigControllerIntegrationTest"));
     }
 
     @Test
@@ -147,6 +246,19 @@ class ConfigControllerIntegrationTest {
 
     private void allowConfigWrites() {
         when(apiKeyService.allow("kr-dev-key", "demo-app", "dev")).thenReturn(true);
+    }
+
+    private String featureBody(String allowlistItems) {
+        return """
+                {
+                  "app":"app",
+                  "env":"dev",
+                  "name":"feature",
+                  "enabled":true,
+                  "rolloutPercentage":50,
+                  "allowlist":[%s]
+                }
+                """.formatted(allowlistItems);
     }
 
     private ConfigItemDto configDto() {

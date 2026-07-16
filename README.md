@@ -188,6 +188,8 @@ Configuration watch requires `sinceVersion >= 0` and `timeoutSeconds` within `1.
 
 Within one server process, concurrent first writes to different keys in the same `app + env` namespace are serialized through a bounded 64-stripe lock, so both writes commit with distinct history rows and a monotonic namespace revision.
 
+Write-request string limits match the persistence model, expected and rollback target versions must be positive, and Feature Flag allowlists accept at most 20 non-blank entries of 32 characters each. Invalid bodies or query types return HTTP 400/code `4001`. Unexpected server failures return only code `5000` and `系统异常`; diagnostic details and the full stack trace remain in server logs under the response trace ID.
+
 ## Main configuration
 
 | Setting | Default | Meaning |

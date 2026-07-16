@@ -618,3 +618,64 @@ Guarantee that two concurrent first writes to one local `app/env` namespace both
 
 - `docs/config-center-dev-plan-v2.md`: Phase 6D
 - `docs/dev-plan.md`: `P1-NAMESPACE-FIRST-WRITE`
+
+---
+
+## 2026-07-16 — Complete Phase 7A request validation and exception hygiene
+
+### Goal
+
+Reject invalid API input before persistence and keep unknown-error diagnostics complete on the server but non-sensitive on the wire.
+
+### Changes
+
+- Added request DTO string limits matching configuration, Feature Flag, and history entity columns.
+- Required positive expected and rollback target versions.
+- Bounded Feature Flag allowlists to 20 non-blank items of at most 32 characters, conservatively fitting worst-case JSON escaping into the 4000-character column.
+- Applied matching `app`, `env`, key, and name limits to read/watch query parameters.
+- Translated numeric query type mismatches to HTTP 400/code `4001`.
+- Logged unknown exceptions with request trace ID and full stack trace while returning only code `5000` and message `系统异常`.
+- Added controller regression tests proving validation occurs before service execution and internal exception details do not enter the response.
+
+### Files changed
+
+- `config-center-server/src/main/java/com/example/configcenter/controller/ConfigController.java`
+- `config-center-server/src/main/java/com/example/configcenter/controller/FeatureController.java`
+- `config-center-server/src/main/java/com/example/configcenter/dto/request/UpsertConfigRequest.java`
+- `config-center-server/src/main/java/com/example/configcenter/dto/request/RollbackConfigRequest.java`
+- `config-center-server/src/main/java/com/example/configcenter/dto/request/UpsertFeatureRequest.java`
+- `config-center-server/src/main/java/com/example/configcenter/dto/request/RollbackFeatureRequest.java`
+- `config-center-server/src/main/java/com/example/configcenter/exception/GlobalExceptionHandler.java`
+- `config-center-server/src/test/java/com/example/configcenter/ConfigControllerIntegrationTest.java`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-dev-plan-v2.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server -Dtest=ConfigControllerIntegrationTest test`
+- Result: passed; 12 tests, 0 failures, 0 errors, and 0 skipped tests.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 44 tests and client 25 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API paths and JSON field names are unchanged.
+- Requests exceeding persistence bounds or using non-positive versions now return HTTP 400 before persistence.
+- Unknown HTTP 500 responses no longer append the Java exception type to their public message.
+- Data schema and existing valid data are unchanged.
+
+### Residual risks
+
+- Validation limits intentionally duplicate persistence limits; future entity-column changes must update DTO/controller constraints and tests together.
+- Allowlist limits are conservative for the current JSON-column design and may require an explicit migration if larger lists become a product requirement.
+- Full stack traces can contain sensitive internal context and therefore depend on appropriate server-log access controls.
+
+### Related plan items
+
+- `docs/config-center-dev-plan-v2.md`: Phase 7A
+- `docs/dev-plan.md`: `P1-REQUEST-BOUNDARY`

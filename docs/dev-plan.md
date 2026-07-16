@@ -340,6 +340,17 @@ Add new defects below before assigning them to a phase.
 - Verification: two synchronized first writes to different keys both commit, produce two current and history rows, advance revision to 2, and notify watchers with committed revisions; a held transaction exposes neither its revision nor notification before commit; rollback behavior remains covered. Focused and full Maven verification passed on 2026-07-16.
 - Status: resolved in Phase 6D.
 
+### P1-REQUEST-BOUNDARY — Invalid input reached persistence and unknown errors leaked type names
+
+- Severity: P1
+- Evidence: request DTOs did not mirror entity string limits or positive version semantics, allowlist items were unbounded, numeric query conversion lacked a dedicated handler, and the catch-all response included the exception class name without logging the stack.
+- Consequence: oversized writes could fail late at the database, invalid numeric input could become HTTP 500, and operators lacked trace-linked stack diagnostics while callers received unnecessary implementation details.
+- Proposed phase: Phase 7A in `docs/config-center-dev-plan-v2.md`.
+- Likely files: request DTOs, controllers, global exception handler, controller integration tests, and project docs.
+- API/data impact: no path or schema change; newly invalid requests return HTTP 400, and unknown HTTP 500 messages are now consistently non-sensitive.
+- Verification: oversized strings, non-positive versions, invalid allowlist count/items, and numeric query type mismatches return code 4001 before service execution; unknown exceptions log their trace ID and full stack while the response contains only code 5000/message `系统异常`. Focused and full Maven verification passed on 2026-07-16.
+- Status: resolved in Phase 7A.
+
 ```markdown
 ### ISSUE-ID — concise title
 

@@ -9,6 +9,7 @@ import com.example.configcenter.dto.response.FeatureHistoryDto;
 import com.example.configcenter.service.FeatureFlagService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,25 +32,27 @@ public class FeatureController {
     }
 
     @GetMapping
-    public ApiResponse<List<FeatureFlagDto>> list(@RequestParam @NotBlank String app,
-                                                  @RequestParam @NotBlank String env) {
+    public ApiResponse<List<FeatureFlagDto>> list(
+            @RequestParam @NotBlank @Size(max = 100) String app,
+            @RequestParam @NotBlank @Size(max = 50) String env) {
         return ApiResponse.ok(service.list(app, env));
     }
 
     // evaluate 接口除了告诉你 true/false，也是在对外暴露当前灰度规则的判断结果。
     @GetMapping("/evaluate")
-    public ApiResponse<FeatureEvalResult> evaluate(@RequestParam @NotBlank String app,
-                                                   @RequestParam @NotBlank String env,
-                                                   @RequestParam @NotBlank String name,
-                                                   @RequestParam @NotBlank String userId) {
+    public ApiResponse<FeatureEvalResult> evaluate(
+            @RequestParam @NotBlank @Size(max = 100) String app,
+            @RequestParam @NotBlank @Size(max = 50) String env,
+            @RequestParam @NotBlank @Size(max = 200) String name,
+            @RequestParam @NotBlank String userId) {
         return ApiResponse.ok(service.evaluate(app, env, name, userId));
     }
 
     @GetMapping("/history")
     public ApiResponse<List<FeatureHistoryDto>> history(
-            @RequestParam @NotBlank String app,
-            @RequestParam @NotBlank String env,
-            @RequestParam @NotBlank String name) {
+            @RequestParam @NotBlank @Size(max = 100) String app,
+            @RequestParam @NotBlank @Size(max = 50) String env,
+            @RequestParam @NotBlank @Size(max = 200) String name) {
         return ApiResponse.ok(service.history(app, env, name));
     }
 

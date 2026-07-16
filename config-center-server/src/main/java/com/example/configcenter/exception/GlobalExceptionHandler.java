@@ -1,8 +1,12 @@
 package com.example.configcenter.exception;
 
+import com.example.configcenter.config.TraceIdFilter;
 import com.example.configcenter.dto.ApiResponse;
 import com.example.configcenter.dto.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -10,6 +14,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,6 +25,8 @@ import java.util.Map;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(BizException.class)
     public org.springframework.http.ResponseEntity<ApiResponse<?>> handleBiz(BizException e) {
@@ -71,6 +78,15 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(ErrorCode.PARAM_INVALID.getCode(), "请求体 JSON 解析失败"));
     }
 
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public org.springframework.http.ResponseEntity<ApiResponse<?>> handleTypeMismatch(
+            MethodArgumentTypeMismatchException e) {
+        return org.springframework.http.ResponseEntity.badRequest()
+                .body(ApiResponse.fail(
+                        ErrorCode.PARAM_INVALID.getCode(),
+                        "请求参数类型错误: " + e.getName()));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public org.springframework.http.ResponseEntity<ApiResponse<?>> handleConflict(DataIntegrityViolationException e) {
         return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
@@ -99,9 +115,11 @@ public class GlobalExceptionHandler {
     // 最后一层兜底，至少保证返回结构别突然变形。
     @ExceptionHandler(Exception.class)
     public org.springframework.http.ResponseEntity<ApiResponse<?>> handleOthers(Exception e) {
+        String traceId = MDC.get(TraceIdFilter.MDC_KEY);
+        log.error("Unhandled server exception, traceId={}", traceId, e);
         ApiResponse<?> body = ApiResponse.fail(
                 ErrorCode.SYSTEM_ERROR.getCode(),
-                "系统异常: " + e.getClass().getSimpleName()
+                ErrorCode.SYSTEM_ERROR.getDefaultMessage()
         );
         return org.springframework.http.ResponseEntity
                 .status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
