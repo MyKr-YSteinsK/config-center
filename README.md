@@ -163,6 +163,8 @@ Remove the argument to use the configured five long-poll rounds. The client cach
 
 The client retries 5xx and network failures and may use cached configuration only after those transient attempts are exhausted. HTTP 4xx responses, including 429, neither retry nor open the availability circuit breaker and never return stale cache as success; requests rejected by an already-open breaker also do not fall back.
 
+Client query values are percent-encoded before requests. Fresh HTTP 200 responses must contain numeric `code: 0` and non-null `data`; configuration data must be an array, while watch data requires boolean `changed` and a non-negative integral `latestVersion`. Malformed successful responses are protocol errors and are not cached. Cache writes use a completed same-directory temporary file, atomic replacement when supported, and a safe replacement fallback otherwise; the JSON format remains unchanged.
+
 ## Public API
 
 | Method | Path | Write authorization | Purpose |

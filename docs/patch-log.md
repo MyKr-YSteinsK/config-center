@@ -735,3 +735,60 @@ Bound process-local rate-limit state, group dynamic resources by matched route, 
 
 - `docs/config-center-dev-plan-v2.md`: Phase 7B
 - `docs/dev-plan.md`: `P1-RATE-LIMIT-LIFECYCLE`
+
+---
+
+## 2026-07-16 — Complete Phase 7C client protocol validation and atomic cache writes
+
+### Goal
+
+Preserve request meaning for special characters, reject malformed successful responses, and prevent normal cache writes from partially overwriting the last readable file.
+
+### Changes
+
+- Built configuration, watch, and Feature Flag evaluation URLs with encoded URI template variables instead of string concatenation.
+- Required an integral `code` equal to `0` and non-null `data` for fresh HTTP 200 responses before use.
+- Required configuration data to be an array and watch data to contain a boolean `changed` plus a non-negative integral `latestVersion`.
+- Classified invalid JSON, missing fields, wrong types, and nonzero success-envelope codes as non-fallback protocol errors; invalid configuration bodies are not cached.
+- Serialized in-process cache writes, wrote complete JSON to a same-directory `.tmp` file, used atomic replacement where available, and fell back to replace-existing move when atomic move is unsupported.
+- Kept the cache JSON structure unchanged and added deterministic encoding, protocol, replacement-failure, fallback, and concurrent-write tests.
+
+### Files changed
+
+- `config-center-client/src/main/java/com/example/democlient/ConfigClient.java`
+- `config-center-client/src/main/java/com/example/democlient/DemoRunner.java`
+- `config-center-client/src/main/java/com/example/democlient/HttpDiskCache.java`
+- `config-center-client/src/main/java/com/example/democlient/HttpRequestFailedException.java`
+- `config-center-client/src/test/java/com/example/democlient/ClientConfigurationTest.java`
+- `config-center-client/src/test/java/com/example/democlient/ConfigClientTest.java`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-dev-plan-v2.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-client '-Dtest=ConfigClientTest,ClientConfigurationTest' test`
+- Result: passed; 15 tests, 0 failures, 0 errors, and 0 skipped tests.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 47 tests and client 31 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- Server paths, JSON field names, and persistence behavior are unchanged.
+- The existing cache filename, map keys, ETag/body fields, and legacy-file migration remain readable without a schema migration.
+- HTTP 304 and exhausted-transient fallback continue to use an existing cache; only fresh malformed HTTP 200 bodies are newly rejected.
+
+### Residual risks
+
+- Cache writes are synchronized only within one client instance; separate processes still do not coordinate access to the same user-home file.
+- On filesystems without atomic move, the fallback replaces only after the temporary file is complete, but crash behavior during the final filesystem move remains provider-dependent.
+- A failed disk replacement leaves the current process's in-memory entry newer than the preserved on-disk entry and emits a warning; a restart reloads the older intact file.
+
+### Related plan items
+
+- `docs/config-center-dev-plan-v2.md`: Phase 7C
+- `docs/dev-plan.md`: `P1-CLIENT-PROTOCOL-CACHE`

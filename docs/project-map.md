@@ -95,12 +95,14 @@ Responsibilities:
 - Use a dedicated watch timeout larger than the server long-poll timeout
 - Refetch and persist configurations after a watch change
 - Call Feature Flag evaluation API
+- Percent-encode configuration, watch, and evaluation query values through URI templates
+- Reject malformed HTTP 200 envelopes before caching or acting on them
 
 Current package: `com.example.democlient`
 
 The package name is legacy naming. Do not rename it as incidental cleanup; handle it only in a dedicated low-risk cleanup task after behavioral stabilization.
 
-The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file.
+The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file. Writes are serialized within the client instance, written to a same-directory `.tmp` file, and moved over the canonical file atomically when supported; filesystems without atomic move use a completed-temp-file replacement fallback.
 
 ## 4. Server architecture
 
@@ -290,12 +292,14 @@ server loads one ordered configuration snapshot
 client reads cached ETag
   -> GET /api/configs with If-None-Match
   -> 304: require and use cached body
-  -> 200: persist new ETag and body
+  -> 200: require numeric code 0 and array data, then persist new ETag and body
   -> 400/403/404/429: fail without retry or cache fallback
   -> 5xx/network failure: retry, then use cache when available
 ```
 
 The client circuit breaker is scoped to service availability. HTTP 4xx responses, including 429, prove that the service was reachable and therefore do not open the breaker; they still fail immediately without cache fallback. Only exhausted 5xx or network failures are cache-fallback eligible, and a request rejected by an already-open breaker is not treated as a fresh transient failure. After the open interval, one HALF_OPEN probe is admitted; success closes the breaker and any failure reopens it.
+
+HTTP 200 responses are not trusted solely because of their status. Configuration and Feature Flag evaluation responses require an integral `code` equal to `0` and non-null `data`; configuration data must be an array. Watch data must be an object with a boolean `changed` and a non-negative integral `latestVersion`. Invalid JSON, missing fields, wrong types, or nonzero codes are protocol errors and are not written to cache or treated as cache-fallback-eligible failures.
 
 ### Configuration watch
 

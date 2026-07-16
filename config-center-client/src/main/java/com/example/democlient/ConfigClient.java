@@ -54,8 +54,9 @@ public class ConfigClient {
         }
 
         String body = response.getBody();
-        if (body == null) {
-            throw new HttpRequestFailedException("HTTP_200_WITHOUT_BODY", 200, false);
+        JsonNode data = requireSuccessfulData(body, "CONFIG");
+        if (!data.isArray()) {
+            throw protocolError("CONFIG_DATA_TYPE");
         }
 
         cache.put(url, response.getHeaders().getETag(), body);
@@ -65,15 +66,62 @@ public class ConfigClient {
     public WatchResult watchOnce(String watchUrl, long sinceVersion, String configUrl)
             throws Exception {
         ResponseEntity<String> response = watchHttp.getWithRetry(watchUrl, null);
-        if (response.getBody() == null) {
-            throw new HttpRequestFailedException("WATCH_RESPONSE_WITHOUT_BODY", 200, false);
+        JsonNode data = requireSuccessfulData(response.getBody(), "WATCH");
+        if (!data.isObject()) {
+            throw protocolError("WATCH_DATA_TYPE");
         }
 
-        JsonNode data = mapper.readTree(response.getBody()).path("data");
-        boolean changed = data.path("changed").asBoolean(false);
-        long latestVersion = data.path("latestVersion").asLong(sinceVersion);
+        JsonNode changedNode = data.get("changed");
+        JsonNode latestVersionNode = data.get("latestVersion");
+        if (changedNode == null || !changedNode.isBoolean()) {
+            throw protocolError("WATCH_CHANGED_TYPE");
+        }
+        if (latestVersionNode == null || !latestVersionNode.isIntegralNumber()
+                || !latestVersionNode.canConvertToLong() || latestVersionNode.longValue() < 0) {
+            throw protocolError("WATCH_LATEST_VERSION_TYPE");
+        }
+
+        boolean changed = changedNode.booleanValue();
+        long latestVersion = latestVersionNode.longValue();
         FetchResult refreshed = changed ? fetchConfigs(configUrl) : null;
         return new WatchResult(changed, latestVersion, refreshed);
+    }
+
+    JsonNode requireSuccessfulData(String body, String responseType) {
+        if (body == null) {
+            throw protocolError(responseType + "_WITHOUT_BODY");
+        }
+
+        JsonNode root;
+        try {
+            root = mapper.readTree(body);
+        } catch (Exception e) {
+            throw protocolError(responseType + "_INVALID_JSON", e);
+        }
+
+        if (root == null || !root.isObject()) {
+            throw protocolError(responseType + "_ROOT_TYPE");
+        }
+
+        JsonNode code = root.get("code");
+        JsonNode data = root.get("data");
+        if (code == null || !code.isIntegralNumber()
+                || !code.canConvertToInt() || code.intValue() != 0) {
+            throw protocolError(responseType + "_CODE");
+        }
+        if (data == null || data.isNull()) {
+            throw protocolError(responseType + "_DATA_MISSING");
+        }
+        return data;
+    }
+
+    private HttpRequestFailedException protocolError(String detail) {
+        return new HttpRequestFailedException("HTTP_200_PROTOCOL_ERROR: " + detail, 200, false);
+    }
+
+    private HttpRequestFailedException protocolError(String detail, Throwable cause) {
+        return new HttpRequestFailedException(
+                "HTTP_200_PROTOCOL_ERROR: " + detail, 200, false, cause);
     }
 
     public record FetchResult(String body, boolean fromCache, boolean notModified) {}

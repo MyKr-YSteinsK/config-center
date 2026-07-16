@@ -485,20 +485,20 @@ Goal: improve boundary validation and local operational safety after Phase 6.
 
 ---
 
-## Phase 7C — Client protocol validation and atomic cache writes `[ ]`
+## Phase 7C — Client protocol validation and atomic cache writes `[x]`
 
 ### Tasks
 
-- [ ] Build URLs with `UriComponentsBuilder` or equivalent encoding.
-- [ ] Validate `code == 0` and required `data`.
-- [ ] Validate watch response fields and types.
-- [ ] Treat malformed HTTP 200 responses as protocol errors.
-- [ ] Write cache through a temporary file.
-- [ ] Replace the canonical cache with atomic move when supported.
-- [ ] Fall back to safe replace when atomic move is unavailable.
-- [ ] Synchronize in-process file writes.
-- [ ] Add special-character, malformed-response, and failed-replacement tests.
-- [ ] Optionally record cache timestamp for diagnostics.
+- [x] Build URLs with `UriComponentsBuilder` or equivalent encoding.
+- [x] Validate `code == 0` and required `data`.
+- [x] Validate watch response fields and types.
+- [x] Treat malformed HTTP 200 responses as protocol errors.
+- [x] Write cache through a temporary file.
+- [x] Replace the canonical cache with atomic move when supported.
+- [x] Fall back to safe replace when atomic move is unavailable.
+- [x] Synchronize in-process file writes.
+- [x] Add special-character, malformed-response, and failed-replacement tests.
+- [x] Review cache timestamp diagnostics; keep the existing cache format unchanged.
 
 ### Acceptance criteria
 

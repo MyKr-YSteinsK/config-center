@@ -4,9 +4,13 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,6 +21,7 @@ public class HttpDiskCache implements ConfigCache {
 
     private final Path file;
     private final Path legacyFile;
+    private final CacheFileMover fileMover;
     private final Map<String, Entry> cache = new ConcurrentHashMap<>();
 
     public HttpDiskCache() {
@@ -27,8 +32,13 @@ public class HttpDiskCache implements ConfigCache {
     }
 
     HttpDiskCache(Path file, Path legacyFile) {
+        this(file, legacyFile, Files::move);
+    }
+
+    HttpDiskCache(Path file, Path legacyFile, CacheFileMover fileMover) {
         this.file = file;
         this.legacyFile = legacyFile;
+        this.fileMover = fileMover;
         load();
     }
 
@@ -50,7 +60,7 @@ public class HttpDiskCache implements ConfigCache {
     }
 
     @Override
-    public void put(String url, String etag, String body) {
+    public synchronized void put(String url, String etag, String body) {
         cache.put(url, new Entry(etag, body));
         save();
     }
@@ -81,11 +91,33 @@ public class HttpDiskCache implements ConfigCache {
     }
 
     private void save() {
+        Path tempFile = file.resolveSibling(file.getFileName() + ".tmp");
         try {
             byte[] bytes = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsBytes(cache);
-            Files.write(file, bytes);
+            Files.write(tempFile, bytes);
+            replace(tempFile);
         } catch (Exception e) {
             System.out.println("WARN: failed to save cache file: " + e.getMessage());
+        } finally {
+            try {
+                Files.deleteIfExists(tempFile);
+            } catch (IOException e) {
+                System.out.println("WARN: failed to clean cache temp file: " + e.getMessage());
+            }
         }
+    }
+
+    private void replace(Path tempFile) throws IOException {
+        try {
+            fileMover.move(tempFile, file,
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException e) {
+            fileMover.move(tempFile, file, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    @FunctionalInterface
+    interface CacheFileMover {
+        Path move(Path source, Path target, CopyOption... options) throws IOException;
     }
 }

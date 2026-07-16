@@ -362,6 +362,17 @@ Add new defects below before assigning them to a phase.
 - Verification: dynamic configuration keys share a route-pattern bucket, ten distinct source keys stay within a three-bucket test bound, invalid configuration limits fail Bean Validation, and successive rejected requests monotonically increase the FunctionCounter. Focused tests and full Maven verification passed on 2026-07-16.
 - Status: resolved in Phase 7B.
 
+### P1-CLIENT-PROTOCOL-CACHE — Successful responses and cache replacement lacked integrity checks
+
+- Severity: P1
+- Evidence: the demo client concatenated raw query values, cached any non-null HTTP 200 body, defaulted missing watch fields to unchanged/current values, and wrote directly over the canonical cache file.
+- Consequence: special characters could alter request meaning, malformed success bodies could enter cache or silently suppress refresh, and an interrupted or failed write could damage the last readable cache.
+- Proposed phase: Phase 7C in `docs/config-center-dev-plan-v2.md`.
+- Likely files: `ConfigClient.java`, `DemoRunner.java`, `HttpDiskCache.java`, client tests, and project docs.
+- API/data impact: no server API or cache JSON format change; query values are now percent-encoded, malformed HTTP 200 responses fail without cache fallback, and cache replacement uses a completed temporary file.
+- Verification: focused tests cover `&`, `+`, `/`, and `?` query values; missing, mistyped, malformed, nonzero-code, and out-of-range response fields; atomic-move fallback; injected replacement failure; and concurrent writes. Full Maven verification passed on 2026-07-16.
+- Status: resolved in Phase 7C.
+
 ```markdown
 ### ISSUE-ID — concise title
 

@@ -17,6 +17,13 @@ public class HttpRequestFailedException extends RuntimeException {
         this.cacheFallbackAllowed = cacheFallbackAllowed;
     }
 
+    public HttpRequestFailedException(
+            String message, Integer statusCode, boolean cacheFallbackAllowed, Throwable cause) {
+        super(message, cause);
+        this.statusCode = statusCode;
+        this.cacheFallbackAllowed = cacheFallbackAllowed;
+    }
+
     public Integer getStatusCode() {
         return statusCode;
     }
