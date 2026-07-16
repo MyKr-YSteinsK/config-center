@@ -190,6 +190,8 @@ Within one server process, concurrent first writes to different keys in the same
 
 Write-request string limits match the persistence model, expected and rollback target versions must be positive, and Feature Flag allowlists accept at most 20 non-blank entries of 32 characters each. Invalid bodies or query types return HTTP 400/code `4001`. Unexpected server failures return only code `5000` and `系统异常`; diagnostic details and the full stack trace remain in server logs under the response trace ID.
 
+The local rate limiter groups requests by source address, HTTP method, and matched route pattern, with an access-order bucket cap to bound memory use. Micrometer exposes the monotonic FunctionCounter as `config_center_rate_limit_blocked`; Prometheus renders the counter sample as `config_center_rate_limit_blocked_total`.
+
 ## Main configuration
 
 | Setting | Default | Meaning |
@@ -199,6 +201,7 @@ Write-request string limits match the persistence model, expected and rollback t
 | `rate-limit.enabled` | `true` | Enables per-process API rate limiting |
 | `rate-limit.capacity` | `5` | Initial token-bucket capacity |
 | `rate-limit.refill-per-second` | `5` | Token refill rate |
+| `rate-limit.max-buckets` | `256` | Maximum process-local rate-limit buckets; least-recently-used entries are evicted |
 | `security.api-keys` | one `demo-app/dev` key | Configuration write authorization mappings |
 | `demo.http.*` | `800/3000 ms` | Client connect/read timeouts |
 | `demo.watch.*` | `10 s + 2000 ms margin`, 5 rounds | Client long-poll settings |

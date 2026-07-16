@@ -118,7 +118,7 @@ Cross-cutting paths:
 
 ```text
 Trace filter -> MDC traceId -> ApiResponse / logs
-RateLimitInterceptor -> TokenBucket -> 429 response / instance-scoped blocked metric
+RateLimitInterceptor -> matched route pattern + bounded LRU TokenBucket map -> 429 response / instance-scoped monotonic blocked counter
 GlobalExceptionHandler -> unified error body
 Actuator / Micrometer -> health and metrics endpoints
 ```
@@ -332,7 +332,9 @@ Server defaults:
 - In-memory H2 database in MySQL compatibility mode
 - Hibernate `ddl-auto=update` and Open Session in View disabled
 - H2 Console enabled at `/h2-console`
-- Rate limiting enabled with capacity `5` and refill rate `5` tokens per second
+- Rate limiting enabled with capacity `5`, refill rate `5` tokens per second, and at most `256` process-local buckets
+- Rate-limit capacity and bucket limits must be positive; refill rate must be non-negative
+- Micrometer meter `config_center_rate_limit_blocked` is a FunctionCounter; Prometheus exports it as `config_center_rate_limit_blocked_total`
 - Actuator exposes health, info, metrics, and Prometheus
 - One local API Key mapping: `kr-dev-key` -> `demo-app/dev`
 

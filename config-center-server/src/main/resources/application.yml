@@ -26,6 +26,7 @@ rate-limit:
   enabled: true
   capacity: 5
   refill-per-second: 5
+  max-buckets: 256
 
 management:
   endpoints:

@@ -351,6 +351,17 @@ Add new defects below before assigning them to a phase.
 - Verification: oversized strings, non-positive versions, invalid allowlist count/items, and numeric query type mismatches return code 4001 before service execution; unknown exceptions log their trace ID and full stack while the response contains only code 5000/message `系统异常`. Focused and full Maven verification passed on 2026-07-16.
 - Status: resolved in Phase 7A.
 
+### P1-RATE-LIMIT-LIFECYCLE — Dynamic paths created unbounded buckets and the blocked total was modeled as a gauge
+
+- Severity: P1
+- Evidence: limiter keys used the concrete request URI and a permanent `ConcurrentHashMap`, while `config_center_rate_limit_blocked_total` was registered as a Gauge.
+- Consequence: distinct configuration keys or source addresses could grow process memory without bound, and a total-suffixed metric did not expose counter semantics.
+- Proposed phase: Phase 7B in `docs/config-center-dev-plan-v2.md`.
+- Likely files: rate-limit properties/interceptor, custom metrics, focused integration tests, runtime configuration, and project docs.
+- API/data impact: no API or schema change; limiter identity now uses the matched route pattern and the process-local bucket map evicts least-recently-used entries above its configured bound. The Micrometer meter base name is now `config_center_rate_limit_blocked`, while Prometheus continues to expose `config_center_rate_limit_blocked_total`.
+- Verification: dynamic configuration keys share a route-pattern bucket, ten distinct source keys stay within a three-bucket test bound, invalid configuration limits fail Bean Validation, and successive rejected requests monotonically increase the FunctionCounter. Focused tests and full Maven verification passed on 2026-07-16.
+- Status: resolved in Phase 7B.
+
 ```markdown
 ### ISSUE-ID — concise title
 

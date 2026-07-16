@@ -1,7 +1,7 @@
 package com.example.configcenter.metrics;
 
 import com.example.configcenter.web.RateLimitInterceptor;
-import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.FunctionCounter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 public class CustomMetrics {
 
     public CustomMetrics(MeterRegistry registry, RateLimitInterceptor rateLimitInterceptor) {
-        Gauge.builder("config_center_rate_limit_blocked_total",
+        FunctionCounter.builder("config_center_rate_limit_blocked",
                         rateLimitInterceptor, RateLimitInterceptor::getBlockedCount)
                 .description("Total number of requests blocked by rate limit")
                 .register(registry);

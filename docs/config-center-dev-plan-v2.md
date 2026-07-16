@@ -459,17 +459,17 @@ Goal: improve boundary validation and local operational safety after Phase 6.
 
 ---
 
-## Phase 7B — Rate limiter lifecycle and metrics semantics `[ ]`
+## Phase 7B — Rate limiter lifecycle and metrics semantics `[x]`
 
 ### Tasks
 
-- [ ] Use matched route patterns instead of concrete dynamic paths where possible.
-- [ ] Prevent one permanent bucket per concrete configuration key.
-- [ ] Add bounded capacity or idle expiration.
-- [ ] Validate rate-limit configuration.
-- [ ] Replace Gauge `_total` semantics with Counter or FunctionCounter.
-- [ ] Add lifecycle and metric tests.
-- [ ] Update metrics documentation if the name changes.
+- [x] Use matched route patterns instead of concrete dynamic paths where possible.
+- [x] Prevent one permanent bucket per concrete configuration key.
+- [x] Add bounded capacity or idle expiration.
+- [x] Validate rate-limit configuration.
+- [x] Replace Gauge `_total` semantics with Counter or FunctionCounter.
+- [x] Add lifecycle and metric tests.
+- [x] Update metrics documentation if the name changes.
 
 ### Acceptance criteria
 

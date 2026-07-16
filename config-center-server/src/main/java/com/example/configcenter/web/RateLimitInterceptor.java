@@ -5,9 +5,12 @@ import com.example.configcenter.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
@@ -20,8 +23,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private final RateLimitProperties props;
     private final LongAdder blockedCount = new LongAdder();
 
-    // key = ip + method + uri，粒度不算细腻，但 demo 阶段已经够说明思路了。
-    private final ConcurrentHashMap<String, TokenBucket> buckets = new ConcurrentHashMap<>();
+    // 访问顺序 map + 固定上限，避免不同来源地址永久累积桶。
+    private final LinkedHashMap<String, TokenBucket> buckets =
+            new LinkedHashMap<>(16, 0.75f, true);
 
     public RateLimitInterceptor(RateLimitProperties props) {
         this.props = props;
@@ -38,11 +42,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
         String method = request.getMethod();
         String ip = request.getRemoteAddr();
-        String key = ip + "|" + method + "|" + uri;
+        String key = ip + "|" + method + "|" + routePattern(request);
 
-        TokenBucket bucket = buckets.computeIfAbsent(
-                key, k -> new TokenBucket(props.getCapacity(), props.getRefillPerSecond())
-        );
+        TokenBucket bucket = bucketFor(key);
 
         if (!bucket.tryConsume(1)) {
             blockedCount.increment();
@@ -54,5 +56,31 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     public long getBlockedCount() {
         return blockedCount.sum();
+    }
+
+    public synchronized int getBucketCount() {
+        return buckets.size();
+    }
+
+    private String routePattern(HttpServletRequest request) {
+        Object pattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        return pattern == null ? request.getRequestURI() : pattern.toString();
+    }
+
+    private synchronized TokenBucket bucketFor(String key) {
+        TokenBucket existing = buckets.get(key);
+        if (existing != null) {
+            return existing;
+        }
+
+        if (buckets.size() >= props.getMaxBuckets()) {
+            Iterator<Map.Entry<String, TokenBucket>> iterator = buckets.entrySet().iterator();
+            iterator.next();
+            iterator.remove();
+        }
+
+        TokenBucket created = new TokenBucket(props.getCapacity(), props.getRefillPerSecond());
+        buckets.put(key, created);
+        return created;
     }
 }

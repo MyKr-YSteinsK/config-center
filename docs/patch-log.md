@@ -679,3 +679,59 @@ Reject invalid API input before persistence and keep unknown-error diagnostics c
 
 - `docs/config-center-dev-plan-v2.md`: Phase 7A
 - `docs/dev-plan.md`: `P1-REQUEST-BOUNDARY`
+
+---
+
+## 2026-07-16 — Complete Phase 7B rate limiter lifecycle and metrics semantics
+
+### Goal
+
+Bound process-local rate-limit state, group dynamic resources by matched route, validate limiter settings, and expose blocked requests with monotonic counter semantics.
+
+### Changes
+
+- Changed bucket identity from concrete request URI to source address, HTTP method, and Spring's matched route pattern, with the URI retained only as a fallback.
+- Replaced the permanent concurrent bucket map with a synchronized access-order map capped by `rate-limit.max-buckets`, defaulting to `256`, and evicting the least-recently-used entry at capacity.
+- Added startup validation requiring positive capacity and bucket count and a non-negative refill rate.
+- Replaced the total-suffixed Gauge with a FunctionCounter whose Micrometer base name is `config_center_rate_limit_blocked`; Prometheus retains the conventional `_total` sample suffix.
+- Added regression tests for shared dynamic-route buckets, bounded lifecycle, invalid settings, and monotonic blocked counts.
+
+### Files changed
+
+- `config-center-server/src/main/java/com/example/configcenter/metrics/CustomMetrics.java`
+- `config-center-server/src/main/java/com/example/configcenter/web/RateLimitInterceptor.java`
+- `config-center-server/src/main/java/com/example/configcenter/web/RateLimitProperties.java`
+- `config-center-server/src/main/resources/application.yml`
+- `config-center-server/src/test/java/com/example/configcenter/RateLimitIntegrationTest.java`
+- `config-center-server/src/test/java/com/example/configcenter/web/RateLimitPropertiesTest.java`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-dev-plan-v2.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server '-Dtest=RateLimitIntegrationTest,RateLimitPropertiesTest' test`
+- Result: passed; 4 tests, 0 failures, 0 errors, and 0 skipped tests.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 47 tests and client 25 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API paths, JSON fields, and persistence schema are unchanged.
+- Valid existing rate-limit settings remain compatible; invalid zero/negative limits now fail startup validation.
+- The Actuator/Micrometer base meter changes from `config_center_rate_limit_blocked_total` to `config_center_rate_limit_blocked`; Prometheus exports the FunctionCounter as `config_center_rate_limit_blocked_total`.
+
+### Residual risks
+
+- Rate limiting and metrics remain process-local and do not coordinate across multiple server instances.
+- LRU eviction intentionally resets token history for an evicted identity, so a high-cardinality source can churn the bounded map even though memory remains bounded.
+- Requests without a matched Spring route use the concrete URI fallback, but their bucket cardinality is still capped globally.
+
+### Related plan items
+
+- `docs/config-center-dev-plan-v2.md`: Phase 7B
+- `docs/dev-plan.md`: `P1-RATE-LIMIT-LIFECYCLE`
