@@ -18,6 +18,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -88,19 +89,30 @@ public class ConfigService {
 
     @Transactional(readOnly = true)
     public List<ConfigItemDto> list(String app, String env) {
+        return loadList(app, env);
+    }
+
+    @Transactional(readOnly = true)
+    public ConfigListSnapshot listSnapshot(String app, String env) {
+        List<ConfigItemDto> data = loadList(app, env);
+        List<String> fields = new ArrayList<>(data.size() * 7);
+        for (ConfigItemDto item : data) {
+            fields.add(item.getApp());
+            fields.add(item.getEnv());
+            fields.add(item.getKey());
+            fields.add(item.getValue());
+            fields.add(item.getDescription());
+            fields.add(Long.toString(item.getVersion()));
+            fields.add(item.getUpdatedAt().toString());
+        }
+        return new ConfigListSnapshot(data, EtagUtil.weakEtagForFields(fields));
+    }
+
+    private List<ConfigItemDto> loadList(String app, String env) {
         return repo.findAllByAppAndEnvOrderByConfigKeyAsc(app, env)
                 .stream()
                 .map(this::toDto)
                 .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public String etagForList(String app, String env) {
-        // 用 key+version 组成一个稳定签名，只要有一项变了，ETag 就会跟着变。
-        String sig = repo.findAllByAppAndEnvOrderByConfigKeyAsc(app, env).stream()
-                .map(i -> i.getConfigKey() + ":" + i.getVersion())
-                .reduce("", (a, b) -> a + ";" + b);
-        return EtagUtil.weakEtag(sig);
     }
 
     @Transactional(readOnly = true)
@@ -185,5 +197,11 @@ public class ConfigService {
         h.setReason(reason);
         h.setCreatedAt(Instant.now());
         return h;
+    }
+
+    public record ConfigListSnapshot(List<ConfigItemDto> data, String etag) {
+        public ConfigListSnapshot {
+            data = List.copyOf(data);
+        }
     }
 }

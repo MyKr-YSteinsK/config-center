@@ -180,6 +180,8 @@ Remove the argument to use the configured five long-poll rounds. The client cach
 
 All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching ETag requests return HTTP 304 without a JSON body. See `examples.http` for ready-to-run requests.
 
+Configuration-list data and its weak ETag are generated from one ordered in-memory snapshot. The hash uses an unambiguous length-prefixed encoding of every response item field, so reset business versions cannot hide changed values or descriptions.
+
 ## Main configuration
 
 | Setting | Default | Meaning |
@@ -195,7 +197,6 @@ All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching
 
 ## Known limits
 
-- The configuration ETag is derived from keys and business versions. Because H2 restarts reset versions while the client disk cache survives, different data can reuse an old ETag after a reset; clear the client cache after resetting server data until the open P1 issue is fixed.
 - H2 is in-memory and uses Hibernate `ddl-auto=update`; there is no production database migration path yet.
 - The configured API Key is plaintext and intended only for local learning. Feature Flag writes are deliberately unauthenticated in the current scope.
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.

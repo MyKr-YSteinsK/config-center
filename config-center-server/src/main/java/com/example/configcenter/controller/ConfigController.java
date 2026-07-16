@@ -56,15 +56,16 @@ public class ConfigController {
             @RequestParam @NotBlank String env,
             @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch) {
 
-        String etag = service.etagForList(app, env);
+        ConfigService.ConfigListSnapshot snapshot = service.listSnapshot(app, env);
 
-        if (ifNoneMatch != null && ifNoneMatch.equals(etag)) {
+        if (ifNoneMatch != null && ifNoneMatch.equals(snapshot.etag())) {
             // 304 按惯例不带 body，但 traceId 这种头信息还是会正常挂出去。
-            return ResponseEntity.status(304).eTag(etag).build();
+            return ResponseEntity.status(304).eTag(snapshot.etag()).build();
         }
 
-        List<ConfigItemDto> data = service.list(app, env);
-        return ResponseEntity.ok().eTag(etag).body(ApiResponse.ok(data));
+        return ResponseEntity.ok()
+                .eTag(snapshot.etag())
+                .body(ApiResponse.ok(snapshot.data()));
     }
 
     /**

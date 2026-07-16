@@ -276,6 +276,11 @@ Rule order:
 ### ETag fetch
 
 ```text
+server loads one ordered configuration snapshot
+  -> map the snapshot to response DTOs once
+  -> length-prefix all response fields and hash them into a weak ETag
+  -> use the same DTO snapshot for conditional comparison and the 200 body
+
 client reads cached ETag
   -> GET /api/configs with If-None-Match
   -> 304: require and use cached body
@@ -332,7 +337,6 @@ Client defaults:
 
 The stabilization phases are complete. The remaining limits are explicit product boundaries, not claims of implemented functionality:
 
-- ETags are derived from configuration keys and business versions, not values. An H2 restart can reuse versions while the client disk cache survives, so different reset data can collide with an old ETag and produce stale 304 cache reuse. This is tracked as an open P1 correctness issue in `docs/dev-plan.md`.
 - H2 data is in-memory and there is no Flyway or production database migration path.
 - The local API Key is plaintext; Feature Flag writes remain deliberately unauthenticated.
 - Rate-limit buckets and long-poll waiters are process-local and do not coordinate across server instances.

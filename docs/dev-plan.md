@@ -301,11 +301,11 @@ Add new defects below before assigning them to a phase.
 - Severity: P1
 - Evidence: `ConfigService.etagForList` hashes only ordered `configKey:version` pairs; the in-memory H2 database restarts business versions from 1, while `.config-center-client-cache.json` persists across server restarts.
 - Consequence: different configuration values with the same keys and reused versions can produce the same ETag, causing HTTP 304 and stale client cache reuse after a database reset.
-- Proposed phase: focused post-stabilization correctness patch before new capabilities.
+- Proposed phase: Phase 6A in `docs/config-center-dev-plan-v2.md`.
 - Likely files: `ConfigService.java`, ETag/controller integration tests, README, project map, patch log.
 - API/data impact: no path or JSON change; corrected ETag values will invalidate previously cached entries naturally.
-- Verification: reproduce reset data with the same key/version but a different value and assert the old `If-None-Match` no longer returns 304.
-- Status: open; documented during Phase 5 and intentionally not fixed inside the documentation-only patch.
+- Verification: reset-style value/description changes with reused version 1 return HTTP 200 with a new ETag; the list endpoint performs one ordered repository load; matching ETags still return bodyless HTTP 304. Focused and full Maven verification passed on 2026-07-16.
+- Status: resolved in Phase 6A.
 
 ```markdown
 ### ISSUE-ID — concise title

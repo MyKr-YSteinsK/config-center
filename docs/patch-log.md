@@ -397,3 +397,58 @@ Replace stabilization-era documentation with a verified description of the curre
 ### Related plan items
 
 - `docs/dev-plan.md`: Phase 5
+
+---
+
+## 2026-07-16 — Complete Phase 6A ETag snapshot correctness
+
+### Goal
+
+Make each configuration-list ETag describe the exact response snapshot and prevent stale 304 cache reuse when H2 business versions are reused.
+
+### Changes
+
+- Added `ConfigListSnapshot`, which loads the ordered configuration list once and carries both immutable response data and its weak ETag.
+- Changed the controller to use the same service snapshot for conditional comparison and the HTTP 200 body, eliminating the former two-query race.
+- Replaced delimiter-based `key:version` input with a length-prefixed SHA-256 field encoding covering every `ConfigItemDto` response field.
+- Added reset-style regression coverage for reused version 1 with changed value and description.
+- Added a single-query snapshot regression test, preserved bodyless HTTP 304 behavior, and added direct ambiguity/weak-format tests for ETag serialization.
+- Removed the resolved ETag reset warning from README and the project map, and added the new Phase 6+ plan to repository documentation.
+
+### Files changed
+
+- `config-center-server/src/main/java/com/example/configcenter/controller/ConfigController.java`
+- `config-center-server/src/main/java/com/example/configcenter/service/ConfigService.java`
+- `config-center-server/src/main/java/com/example/configcenter/service/EtagUtil.java`
+- `config-center-server/src/test/java/com/example/configcenter/ConfigEtagIntegrationTest.java`
+- `config-center-server/src/test/java/com/example/configcenter/EtagUtilTest.java`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-dev-plan-v2.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server '-Dtest=ConfigEtagIntegrationTest,EtagUtilTest' test`
+- Result: passed; 4 tests, 0 failures, 0 errors.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 36 tests and client 15 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API impact: paths, JSON fields, HTTP 304 behavior, and weak ETag format are unchanged.
+- Data impact: none.
+- Cache impact: old ETags naturally become invalid because the representation hash input changed.
+
+### Residual risks
+
+- The ETag field list is explicit; future `ConfigItemDto` response-field additions must update the snapshot hash and its regression tests.
+- SHA-256 collision risk is negligible for this local learning baseline.
+
+### Related plan items
+
+- `docs/config-center-dev-plan-v2.md`: Phase 6A
+- `docs/dev-plan.md`: `P1-ETAG-RESET`
