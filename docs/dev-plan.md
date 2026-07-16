@@ -318,6 +318,17 @@ Add new defects below before assigning them to a phase.
 - Verification: timeout and notification preserve each watch request's header/body trace ID; two simultaneous watchers remain distinct; separator-containing namespaces do not collide; completed namespace entries are removed; invalid query bounds return HTTP 400. Focused and full Maven verification passed on 2026-07-16.
 - Status: resolved in Phase 6B.
 
+### P1-CLIENT-BREAKER — Caller errors contaminated availability state and cache fallback
+
+- Severity: P1
+- Evidence: `ReliableHttp` recorded every non-200/non-304 response as a breaker failure before classifying the status, and circuit-open rejection was marked cache-fallback eligible.
+- Consequence: repeated 403, 404, or 429 responses could open the breaker and later make stale cache appear to be a successful configuration read.
+- Proposed phase: Phase 6C in `docs/config-center-dev-plan-v2.md`.
+- Likely files: `ReliableHttp.java`, `CircuitBreaker.java`, focused client tests, and project docs.
+- API/data impact: no server API or cache-format change; corrected client failure classification only.
+- Verification: direct deterministic tests cover CLOSED, OPEN, and HALF_OPEN transitions; repeated 403/404 keep the breaker closed; repeated 429 and circuit-open rejection cannot use stale cache; existing 5xx/network retry and exhausted-transient fallback remain covered. Focused and full Maven verification passed on 2026-07-16.
+- Status: resolved in Phase 6C.
+
 ```markdown
 ### ISSUE-ID — concise title
 

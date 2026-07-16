@@ -76,6 +76,28 @@ class ConfigClientTest {
     }
 
     @Test
+    void repeated429_neverReturnsStaleCacheAsSuccess() {
+        InMemoryCache cache = new InMemoryCache();
+        cache.put("configs", "etag", "old-body");
+        int writesBefore = cache.putCount;
+        AtomicInteger requests = new AtomicInteger();
+        HttpFetcher standard = (url, etag) -> {
+            requests.incrementAndGet();
+            throw new HttpRequestFailedException("HTTP_429_TOO_MANY_REQUESTS", 429, false);
+        };
+        ConfigClient client = client(standard, unusedWatch(), cache);
+
+        for (int call = 0; call < 3; call++) {
+            assertThrows(HttpRequestFailedException.class,
+                    () -> client.fetchConfigs("configs"));
+        }
+
+        assertEquals(3, requests.get());
+        assertEquals(writesBefore, cache.putCount);
+        assertEquals("old-body", cache.get("configs").body);
+    }
+
+    @Test
     void changedWatch_refetchesAndPersistsLatestConfig() throws Exception {
         InMemoryCache cache = new InMemoryCache();
         AtomicInteger fetches = new AtomicInteger();

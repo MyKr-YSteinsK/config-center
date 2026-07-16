@@ -508,3 +508,59 @@ Preserve each long-poll request's trace identity across asynchronous completion 
 
 - `docs/config-center-dev-plan-v2.md`: Phase 6B
 - `docs/dev-plan.md`: `P1-WATCH-ASYNC`
+
+---
+
+## 2026-07-16 — Complete Phase 6C client circuit-breaker semantics
+
+### Goal
+
+Keep caller errors out of service-availability state and restrict stale-cache fallback to exhausted transient failures.
+
+### Changes
+
+- Moved breaker failure recording into the 5xx, network, and unexpected-exception branches.
+- Treated received 4xx responses, including 429, as proof of service reachability while preserving immediate failure with no retry or cache fallback.
+- Made circuit-open rejection ineligible for cache fallback.
+- Added an injectable clock and deterministic direct tests for CLOSED, OPEN, and HALF_OPEN transitions.
+- Ensured successful recovery closes a breaker opened by earlier retry attempts and unexpected HALF_OPEN exceptions reopen instead of occupying the probe permanently.
+- Added regression coverage for repeated 403/404, repeated 429 with existing cache, circuit-open rejection, and retained 5xx/network retry behavior.
+
+### Files changed
+
+- `config-center-client/src/main/java/com/example/democlient/CircuitBreaker.java`
+- `config-center-client/src/main/java/com/example/democlient/ReliableHttp.java`
+- `config-center-client/src/test/java/com/example/democlient/CircuitBreakerTest.java`
+- `config-center-client/src/test/java/com/example/democlient/ReliableHttpTest.java`
+- `config-center-client/src/test/java/com/example/democlient/ConfigClientTest.java`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-dev-plan-v2.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-client test`
+- Result: passed; 25 tests, 0 failures, 0 errors, and 0 skipped tests.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 38 tests and client 25 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- Server API impact: none.
+- Cache-format impact: none.
+- Client behavior impact: caller errors and circuit-open rejection no longer produce false stale-cache success; transient retry behavior remains unchanged.
+
+### Residual risks
+
+- The breaker remains a deliberately small in-process implementation shared per configured HTTP client, without distributed coordination or persisted state.
+- Concurrent in-flight request outcomes are serialized but not correlated to individual breaker permits; high-concurrency production semantics would require a more specialized implementation and stress testing.
+- HTTP 429 remains non-retryable and does not yet interpret `Retry-After`; callers must decide when to issue a later request.
+
+### Related plan items
+
+- `docs/config-center-dev-plan-v2.md`: Phase 6C
+- `docs/dev-plan.md`: `P1-CLIENT-BREAKER`

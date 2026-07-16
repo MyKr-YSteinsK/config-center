@@ -91,7 +91,7 @@ Responsibilities:
 - Retry 5xx and network failures according to policy
 - Reject 400/403/404 and 429 without retrying
 - Fall back to cached configuration only after exhausted transient failures
-- Run a basic circuit breaker
+- Run a basic availability circuit breaker that counts 5xx and network failures only
 - Use a dedicated watch timeout larger than the server long-poll timeout
 - Refetch and persist configurations after a watch change
 - Call Feature Flag evaluation API
@@ -288,6 +288,8 @@ client reads cached ETag
   -> 400/403/404/429: fail without retry or cache fallback
   -> 5xx/network failure: retry, then use cache when available
 ```
+
+The client circuit breaker is scoped to service availability. HTTP 4xx responses, including 429, prove that the service was reachable and therefore do not open the breaker; they still fail immediately without cache fallback. Only exhausted 5xx or network failures are cache-fallback eligible, and a request rejected by an already-open breaker is not treated as a fresh transient failure. After the open interval, one HALF_OPEN probe is admitted; success closes the breaker and any failure reopens it.
 
 ### Configuration watch
 

@@ -32,7 +32,7 @@ public class ReliableHttp implements HttpFetcher {
     @Override
     public ResponseEntity<String> getWithRetry(String url, String ifNoneMatch) throws InterruptedException {
         if (!breaker.allowRequest()) {
-            throw new HttpRequestFailedException("CIRCUIT_OPEN: " + breaker.snapshot(), true, null);
+            throw new HttpRequestFailedException("CIRCUIT_OPEN: " + breaker.snapshot(), false, null);
         }
 
         HttpHeaders headers = new HttpHeaders();
@@ -52,8 +52,8 @@ public class ReliableHttp implements HttpFetcher {
                     return response;
                 }
 
-                breaker.recordFailure();
                 if (status >= 500 && status <= 599) {
+                    breaker.recordFailure();
                     if (attempt < retryPolicy.getMaxAttempts()) {
                         backoff(attempt);
                         continue;
@@ -62,11 +62,15 @@ public class ReliableHttp implements HttpFetcher {
                             "HTTP_" + status + " after " + attempt + " attempts", status, true);
                 }
 
+                // 4xx（包括 429）证明服务可达，不污染仅描述可用性的断路器。
+                breaker.recordSuccess();
                 if (status == 429) {
                     throw new HttpRequestFailedException("HTTP_429_TOO_MANY_REQUESTS", status, false);
                 }
 
                 throw new HttpRequestFailedException("HTTP_" + status, status, false);
+            } catch (HttpRequestFailedException e) {
+                throw e;
             } catch (ResourceAccessException e) {
                 breaker.recordFailure();
                 if (attempt < retryPolicy.getMaxAttempts()) {
@@ -75,6 +79,10 @@ public class ReliableHttp implements HttpFetcher {
                 }
                 throw new HttpRequestFailedException(
                         "Network request failed after " + attempt + " attempts", true, e);
+            } catch (RuntimeException e) {
+                // 未预期异常也必须释放 HALF_OPEN 的单探测槽，避免断路器永久卡住。
+                breaker.recordFailure();
+                throw e;
             }
         }
 

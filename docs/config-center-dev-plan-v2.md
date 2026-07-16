@@ -261,7 +261,7 @@ git diff --check
 
 ---
 
-## Phase 6C — Client circuit-breaker semantics `[ ]`
+## Phase 6C — Client circuit-breaker semantics `[x]`
 
 ### Goal
 
@@ -300,18 +300,18 @@ Ensure caller errors do not contaminate service-availability state or cause stal
 
 ### Tasks
 
-- [ ] Move failure recording into transient-failure branches.
-- [ ] Define and document 429 breaker semantics.
-- [ ] Add direct `CircuitBreakerTest`.
-- [ ] Test CLOSED -> OPEN.
-- [ ] Test OPEN -> HALF_OPEN.
-- [ ] Test HALF_OPEN success -> CLOSED.
-- [ ] Test HALF_OPEN failure -> OPEN.
-- [ ] Test repeated 403/404 never opens the breaker.
-- [ ] Test repeated 429 never becomes stale-cache success.
-- [ ] Test fallback occurs only after transient failures.
-- [ ] Add a controllable clock if needed.
-- [ ] Update project map and patch log.
+- [x] Move failure recording into transient-failure branches.
+- [x] Define and document 429 breaker semantics.
+- [x] Add direct `CircuitBreakerTest`.
+- [x] Test CLOSED -> OPEN.
+- [x] Test OPEN -> HALF_OPEN.
+- [x] Test HALF_OPEN success -> CLOSED.
+- [x] Test HALF_OPEN failure -> OPEN.
+- [x] Test repeated 403/404 never opens the breaker.
+- [x] Test repeated 429 never becomes stale-cache success.
+- [x] Test fallback occurs only after transient failures.
+- [x] Add a controllable clock if needed.
+- [x] Update project map and patch log.
 
 ### Acceptance criteria
 

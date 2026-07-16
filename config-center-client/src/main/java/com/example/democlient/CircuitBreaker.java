@@ -1,5 +1,7 @@
 package com.example.democlient;
 
+import java.util.function.LongSupplier;
+
 /**
  * 一个很轻量的断路器。
  * 目的不是做成 Hystrix 替代品，而是让客户端遇到连续失败时别一头猛撞服务端。
@@ -10,6 +12,7 @@ public class CircuitBreaker {
 
     private final int failureThreshold;
     private final long openMillis;
+    private final LongSupplier clock;
 
     private State state = State.CLOSED;
     private int failures = 0;
@@ -17,12 +20,17 @@ public class CircuitBreaker {
     private boolean halfOpenInFlight = false;
 
     public CircuitBreaker(int failureThreshold, long openMillis) {
+        this(failureThreshold, openMillis, System::currentTimeMillis);
+    }
+
+    CircuitBreaker(int failureThreshold, long openMillis, LongSupplier clock) {
         this.failureThreshold = failureThreshold;
         this.openMillis = openMillis;
+        this.clock = clock;
     }
 
     public synchronized boolean allowRequest() {
-        long now = System.currentTimeMillis();
+        long now = clock.getAsLong();
 
         if (state == State.CLOSED) return true;
 
@@ -47,10 +55,8 @@ public class CircuitBreaker {
 
     public synchronized void recordSuccess() {
         failures = 0;
-        if (state == State.HALF_OPEN) {
-            state = State.CLOSED;
-            halfOpenInFlight = false;
-        }
+        state = State.CLOSED;
+        halfOpenInFlight = false;
     }
 
     public synchronized void recordFailure() {
@@ -68,8 +74,12 @@ public class CircuitBreaker {
 
     private void open() {
         state = State.OPEN;
-        openUntilEpochMs = System.currentTimeMillis() + openMillis;
+        openUntilEpochMs = clock.getAsLong() + openMillis;
         halfOpenInFlight = false;
+    }
+
+    synchronized State state() {
+        return state;
     }
 
     public synchronized String snapshot() {

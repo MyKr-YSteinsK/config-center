@@ -161,6 +161,8 @@ After seeding the configuration and Feature Flag above, run the client once with
 
 Remove the argument to use the configured five long-poll rounds. The client cache is stored at `${user.home}/.config-center-client-cache.json`; an existing legacy `.config-center-demo-client-cache.json` is migrated without being deleted.
 
+The client retries 5xx and network failures and may use cached configuration only after those transient attempts are exhausted. HTTP 4xx responses, including 429, neither retry nor open the availability circuit breaker and never return stale cache as success; requests rejected by an already-open breaker also do not fall back.
+
 ## Public API
 
 | Method | Path | Write authorization | Purpose |
