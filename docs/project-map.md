@@ -311,6 +311,10 @@ Current behavior:
 - Waiting clients are notified after commit with the committed revision.
 - Rolled-back transactions neither expose a new revision nor notify clients.
 - The controller rechecks the revision after registering a waiter so a change cannot be lost between the initial read and registration.
+- Waiters are indexed by an immutable `(app, env)` key, so separator characters in either value cannot collide.
+- Each waiter stores its originating request trace ID; timeout and change responses build an independent body whose `traceId` matches that request's `X-Trace-Id` response header.
+- Completion removes the waiter and discards empty namespace entries from the process-local map.
+- `sinceVersion` must be non-negative and `timeoutSeconds` must be within `1..60`; violations return HTTP 400.
 
 ## 8. Runtime configuration baseline
 

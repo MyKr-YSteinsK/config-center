@@ -1,5 +1,6 @@
 package com.example.configcenter.controller;
 
+import com.example.configcenter.config.TraceIdFilter;
 import com.example.configcenter.dto.ApiResponse;
 import com.example.configcenter.dto.request.RollbackConfigRequest;
 import com.example.configcenter.dto.request.UpsertConfigRequest;
@@ -12,7 +13,10 @@ import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.ConfigService;
 import com.example.configcenter.service.ConfigWatchNotifier;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -102,23 +106,24 @@ public class ConfigController {
     public DeferredResult<ApiResponse<ConfigWatchDto>> watch(
             @RequestParam @NotBlank String app,
             @RequestParam @NotBlank String env,
-            @RequestParam long sinceVersion,
-            @RequestParam(defaultValue = "30") int timeoutSeconds) {
+            @RequestParam @PositiveOrZero long sinceVersion,
+            @RequestParam(defaultValue = "30") @Min(1) @Max(60) int timeoutSeconds,
+            @RequestAttribute(TraceIdFilter.REQUEST_ATTRIBUTE) String traceId) {
 
         long latest = service.latestVersion(app, env);
 
         if (latest > sinceVersion) {
             // 版本已经变了，就别让客户端白等，直接回。
             DeferredResult<ApiResponse<ConfigWatchDto>> dr = new DeferredResult<>(0L);
-            dr.setResult(ApiResponse.ok(new ConfigWatchDto(true, latest)));
+            dr.setResult(ApiResponse.ok(new ConfigWatchDto(true, latest), traceId));
             return dr;
         }
         DeferredResult<ApiResponse<ConfigWatchDto>> dr =
-                notifier.register(app, env, Duration.ofSeconds(timeoutSeconds), latest);
+                notifier.register(app, env, Duration.ofSeconds(timeoutSeconds), latest, traceId);
 
         long latestAfterRegistration = service.latestVersion(app, env);
         if (latestAfterRegistration > sinceVersion) {
-            dr.setResult(ApiResponse.ok(new ConfigWatchDto(true, latestAfterRegistration)));
+            dr.setResult(ApiResponse.ok(new ConfigWatchDto(true, latestAfterRegistration), traceId));
         }
         return dr;
     }

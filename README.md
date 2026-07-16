@@ -182,6 +182,8 @@ All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching
 
 Configuration-list data and its weak ETag are generated from one ordered in-memory snapshot. The hash uses an unambiguous length-prefixed encoding of every response item field, so reset business versions cannot hide changed values or descriptions.
 
+Configuration watch requires `sinceVersion >= 0` and `timeoutSeconds` within `1..60`. Each completed long-poll response preserves its own request trace ID in both the `X-Trace-Id` header and JSON body, including timeout and write-triggered notification paths.
+
 ## Main configuration
 
 | Setting | Default | Meaning |

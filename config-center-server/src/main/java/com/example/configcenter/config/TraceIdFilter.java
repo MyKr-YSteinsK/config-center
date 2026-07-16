@@ -20,6 +20,8 @@ public class TraceIdFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Trace-Id";
     public static final String MDC_KEY = "traceId";
+    public static final String REQUEST_ATTRIBUTE =
+            "com.example.configcenter.config.TraceIdFilter.traceId";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -30,6 +32,7 @@ public class TraceIdFilter extends OncePerRequestFilter {
             traceId = UUID.randomUUID().toString().replace("-", "");
         }
 
+        request.setAttribute(REQUEST_ATTRIBUTE, traceId);
         MDC.put(MDC_KEY, traceId);
         response.setHeader(HEADER, traceId);
 

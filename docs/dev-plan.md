@@ -307,6 +307,17 @@ Add new defects below before assigning them to a phase.
 - Verification: reset-style value/description changes with reused version 1 return HTTP 200 with a new ETag; the list endpoint performs one ordered repository load; matching ETags still return bodyless HTTP 304. Focused and full Maven verification passed on 2026-07-16.
 - Status: resolved in Phase 6A.
 
+### P1-WATCH-ASYNC — Long-poll trace identity and waiter lifecycle were unsafe
+
+- Severity: P1
+- Evidence: asynchronous timeout and notification callbacks created response bodies from thread-local MDC, waiter keys concatenated `app + "|" + env`, and completed waiters could leave empty namespace lists.
+- Consequence: watch body trace IDs could be null or leak a write request's trace ID, distinct namespaces could collide, and the waiter map could accumulate empty entries.
+- Proposed phase: Phase 6B in `docs/config-center-dev-plan-v2.md`.
+- Likely files: trace filter, response factory, watch controller/notifier, watch integration tests, and project docs.
+- API/data impact: no path or JSON-field change; invalid `sinceVersion` or `timeoutSeconds` values now return HTTP 400.
+- Verification: timeout and notification preserve each watch request's header/body trace ID; two simultaneous watchers remain distinct; separator-containing namespaces do not collide; completed namespace entries are removed; invalid query bounds return HTTP 400. Focused and full Maven verification passed on 2026-07-16.
+- Status: resolved in Phase 6B.
+
 ```markdown
 ### ISSUE-ID — concise title
 

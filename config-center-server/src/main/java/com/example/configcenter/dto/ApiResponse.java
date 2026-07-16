@@ -26,6 +26,10 @@ public class ApiResponse<T> {
         return new ApiResponse<>(0, "OK", data, MDC.get("traceId"));
     }
 
+    public static <T> ApiResponse<T> ok(T data, String traceId) {
+        return new ApiResponse<>(0, "OK", data, traceId);
+    }
+
     public static <T> ApiResponse<T> fail(int code, String message) {
         return new ApiResponse<>(code, message, null, MDC.get("traceId"));
     }

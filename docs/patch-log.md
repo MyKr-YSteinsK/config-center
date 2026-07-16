@@ -452,3 +452,59 @@ Make each configuration-list ETag describe the exact response snapshot and preve
 
 - `docs/config-center-dev-plan-v2.md`: Phase 6A
 - `docs/dev-plan.md`: `P1-ETAG-RESET`
+
+---
+
+## 2026-07-16 — Complete Phase 6B watch async correctness and waiter lifecycle
+
+### Goal
+
+Preserve each long-poll request's trace identity across asynchronous completion and make waiter indexing, cleanup, and query bounds explicit.
+
+### Changes
+
+- Captured the request trace ID as a servlet request attribute and added an explicit-trace success response factory.
+- Replaced delimiter-composed waiter keys with an immutable namespace record and stored the namespace, originating trace ID, and deferred result in a typed waiter record.
+- Built timeout and notification responses per waiter, preventing a configuration write trace ID from leaking into waiting responses.
+- Removed completed waiters and empty namespace entries using atomic map operations.
+- Validated `sinceVersion >= 0` and `timeoutSeconds` within `1..60`.
+- Added integration coverage for timeout and notification trace identity, two distinct watchers, separator-safe namespaces, cleanup, and invalid query bounds.
+
+### Files changed
+
+- `config-center-server/src/main/java/com/example/configcenter/config/TraceIdFilter.java`
+- `config-center-server/src/main/java/com/example/configcenter/controller/ConfigController.java`
+- `config-center-server/src/main/java/com/example/configcenter/dto/ApiResponse.java`
+- `config-center-server/src/main/java/com/example/configcenter/service/ConfigWatchNotifier.java`
+- `config-center-server/src/test/java/com/example/configcenter/ConfigWatchIntegrationTest.java`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-dev-plan-v2.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server -Dtest=ConfigWatchIntegrationTest test`
+- Result: passed; 10 tests, 0 failures, 0 errors, and 0 skipped tests.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 38 tests and client 15 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- API impact: paths and JSON field names are unchanged; invalid watch query bounds now return HTTP 400.
+- Data impact: none.
+- Runtime impact: waiters remain process-local and in-memory; their keys, response trace source, and cleanup semantics are now explicit.
+
+### Residual risks
+
+- Waiter registration and notification remain single-process only and are not coordinated across server instances.
+- `CopyOnWriteArrayList` favors the expected low waiter churn of this learning project; high-volume production workloads would require fresh profiling.
+- Servlet-container disconnect timing is covered by the same completion cleanup callback but is not forced deterministically by the current integration suite.
+
+### Related plan items
+
+- `docs/config-center-dev-plan-v2.md`: Phase 6B
+- `docs/dev-plan.md`: `P1-WATCH-ASYNC`

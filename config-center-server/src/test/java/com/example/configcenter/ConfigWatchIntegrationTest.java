@@ -1,5 +1,6 @@
 package com.example.configcenter;
 
+import com.example.configcenter.config.TraceIdFilter;
 import com.example.configcenter.dto.request.RollbackConfigRequest;
 import com.example.configcenter.dto.request.UpsertConfigRequest;
 import com.example.configcenter.repository.ConfigItemHistoryRepository;
@@ -7,6 +8,7 @@ import com.example.configcenter.repository.ConfigItemRepository;
 import com.example.configcenter.repository.ConfigNamespaceRevisionRepository;
 import com.example.configcenter.service.ConfigService;
 import com.example.configcenter.service.ConfigWatchNotifier;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,13 +16,16 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
@@ -28,6 +33,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -128,15 +135,22 @@ class ConfigWatchIntegrationTest {
     }
 
     @Test
-    void watchTimesOutWithNoChange() {
-        var response = restTemplate.getForEntity(
+    void watchTimeout_preservesTraceIdAndRemovesNamespace() throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(TraceIdFilter.HEADER, "watch-timeout");
+        ResponseEntity<JsonNode> response = restTemplate.exchange(
                 "/api/configs/watch?app=app&env=dev&sinceVersion=0&timeoutSeconds=1",
-                String.class
-        );
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                JsonNode.class);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertTrue(response.getBody().contains("\"changed\":false"));
-        assertTrue(response.getBody().contains("\"latestVersion\":0"));
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals("watch-timeout", response.getHeaders().getFirst(TraceIdFilter.HEADER));
+        assertEquals("watch-timeout", response.getBody().path("traceId").asText());
+        assertEquals(false, response.getBody().path("data").path("changed").asBoolean());
+        assertEquals(0, response.getBody().path("data").path("latestVersion").asLong());
+
+        assertEquals(0, notifier.pendingNamespaceCount());
     }
 
     @Test
@@ -146,34 +160,109 @@ class ConfigWatchIntegrationTest {
         MvcResult result = mockMvc.perform(get("/api/configs/watch")
                         .param("app", "app")
                         .param("env", "dev")
-                        .param("sinceVersion", "0"))
+                        .param("sinceVersion", "0")
+                        .header(TraceIdFilter.HEADER, "watch-immediate"))
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
         result.getAsyncResult(2_000);
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
+                .andExpect(header().string(TraceIdFilter.HEADER, "watch-immediate"))
+                .andExpect(jsonPath("$.traceId").value("watch-immediate"))
                 .andExpect(jsonPath("$.data.changed").value(true))
                 .andExpect(jsonPath("$.data.latestVersion").value(1));
     }
 
     @Test
-    void waitingWatchIsNotifiedByCommittedChange() throws Exception {
-        MvcResult result = mockMvc.perform(get("/api/configs/watch")
+    void twoWaitingWatchers_keepOwnTraceIdsWhenWriteRequestNotifies() throws Exception {
+        MvcResult first = startWatch("demo-app", "dev", "watch-one", 5);
+        MvcResult second = startWatch("demo-app", "dev", "watch-two", 5);
+
+        mockMvc.perform(post("/api/configs")
+                        .header("X-API-Key", "kr-dev-key")
+                        .header(TraceIdFilter.HEADER, "write-trace")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "app": "demo-app",
+                                  "env": "dev",
+                                  "key": "key",
+                                  "value": "v1"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        first.getAsyncResult(2_000);
+        second.getAsyncResult(2_000);
+        assertWatchChanged(first, "watch-one", 1);
+        assertWatchChanged(second, "watch-two", 1);
+        assertEquals(0, notifier.pendingNamespaceCount());
+    }
+
+    @Test
+    void separatorCharacters_doNotCollideNamespaces() throws Exception {
+        MvcResult first = startWatch("a|b", "c", "separator-one", 5);
+        MvcResult second = startWatch("a", "b|c", "separator-two", 5);
+
+        service.upsert(config("a|b", "c", "key", "v1"));
+        first.getAsyncResult(2_000);
+        assertWatchChanged(first, "separator-one", 1);
+        assertEquals(1, notifier.pendingNamespaceCount());
+
+        service.upsert(config("a", "b|c", "key", "v1"));
+        second.getAsyncResult(2_000);
+        assertWatchChanged(second, "separator-two", 1);
+        assertEquals(0, notifier.pendingNamespaceCount());
+    }
+
+    @Test
+    void invalidWatchRevisionAndTimeout_return400() throws Exception {
+        mockMvc.perform(get("/api/configs/watch")
                         .param("app", "app")
                         .param("env", "dev")
+                        .param("sinceVersion", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4001));
+
+        for (String timeout : new String[]{"0", "61"}) {
+            mockMvc.perform(get("/api/configs/watch")
+                            .param("app", "app")
+                            .param("env", "dev")
+                            .param("sinceVersion", "0")
+                            .param("timeoutSeconds", timeout))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(4001));
+        }
+    }
+
+    private MvcResult startWatch(String app, String env, String traceId, int timeoutSeconds)
+            throws Exception {
+        return mockMvc.perform(get("/api/configs/watch")
+                        .param("app", app)
+                        .param("env", env)
                         .param("sinceVersion", "0")
-                        .param("timeoutSeconds", "5"))
+                        .param("timeoutSeconds", Integer.toString(timeoutSeconds))
+                        .header(TraceIdFilter.HEADER, traceId))
                 .andExpect(request().asyncStarted())
                 .andReturn();
+    }
 
-        service.upsert(config("key", "v1"));
-
-        result.getAsyncResult(2_000);
+    private void assertWatchChanged(MvcResult result, String traceId, long latestVersion)
+            throws Exception {
         mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
+                .andExpect(header().string(TraceIdFilter.HEADER, traceId))
+                .andExpect(jsonPath("$.traceId").value(traceId))
                 .andExpect(jsonPath("$.data.changed").value(true))
-                .andExpect(jsonPath("$.data.latestVersion").value(1));
+                .andExpect(jsonPath("$.data.latestVersion").value(latestVersion));
+    }
+
+    private UpsertConfigRequest config(String app, String env, String key, String value) {
+        UpsertConfigRequest request = config(key, value);
+        request.setApp(app);
+        request.setEnv(env);
+        return request;
     }
 
     private UpsertConfigRequest config(String key, String value) {

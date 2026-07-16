@@ -178,7 +178,7 @@ git diff --check
 
 ---
 
-## Phase 6B — Watch async correctness and waiter lifecycle `[ ]`
+## Phase 6B — Watch async correctness and waiter lifecycle `[x]`
 
 ### Goal
 
@@ -208,18 +208,18 @@ Make long-poll responses preserve each watch request's own trace identity and pr
 
 ### Tasks
 
-- [ ] Add typed `NamespaceKey`.
-- [ ] Add typed waiter holder.
-- [ ] Capture watch request traceId at registration.
-- [ ] Add explicit-trace response creation.
-- [ ] Ensure timeout body/header traceIds match.
-- [ ] Ensure notification body/header traceIds match.
-- [ ] Ensure two watchers retain their own distinct traceIds.
-- [ ] Remove empty namespace entries.
-- [ ] Add watch query validation.
-- [ ] Add separator-character collision tests.
-- [ ] Add invalid revision and timeout tests.
-- [ ] Update project map and patch log.
+- [x] Add typed `NamespaceKey`.
+- [x] Add typed waiter holder.
+- [x] Capture watch request traceId at registration.
+- [x] Add explicit-trace response creation.
+- [x] Ensure timeout body/header traceIds match.
+- [x] Ensure notification body/header traceIds match.
+- [x] Ensure two watchers retain their own distinct traceIds.
+- [x] Remove empty namespace entries.
+- [x] Add watch query validation.
+- [x] Add separator-character collision tests.
+- [x] Add invalid revision and timeout tests.
+- [x] Update project map and patch log.
 
 ### Acceptance criteria
 
