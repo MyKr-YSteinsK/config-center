@@ -40,6 +40,25 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- MySQL profile 使用专用驱动；local/test profile 仍保持 H2。 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- MySQL schema 只由 Flyway migration 管理，Hibernate 仅执行 validate。 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Swagger UI，调接口时比纯手写 curl 更顺手。 -->
         <dependency>
             <groupId>org.springdoc</groupId>

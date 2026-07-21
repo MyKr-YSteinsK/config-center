@@ -277,7 +277,7 @@ Goal: rebuild public documentation only after implementation is trustworthy.
 
 ## 4. Deferred enhancements
 
-The following enhancements remain outside the verified stabilization baseline. MySQL, Flyway, and Docker Compose are now scheduled separately by `docs/config-center-persistent-deployment-plan.md`; the other items remain unscheduled unless explicitly requested:
+The following enhancements remain outside the verified stabilization baseline. MySQL and Flyway are implemented by Phase 9B, while Docker Compose remains scheduled by `docs/config-center-persistent-deployment-plan.md`; the other items remain unscheduled unless explicitly requested:
 
 - Feature watch
 - SSE or WebSocket
@@ -391,6 +391,17 @@ Add new defects below before assigning them to a phase.
 - API/data impact: no API, entity, schema, or business-logic change; the default runtime remains in-memory H2 through the `local` profile.
 - Verification: the `test` context starts on a randomized H2 database without Docker, the `local` jar reports health `UP`, missing MySQL variables fail fast and list only their names, and focused/server/full Maven verification passed on 2026-07-21.
 - Status: resolved in Phase 9A.
+
+### P1-MYSQL-SCHEMA-OWNERSHIP — Persistent profile lacked a driver and versioned schema
+
+- Severity: P1
+- Evidence: the `mysql` profile enabled Flyway and Hibernate validation, but the server had no Connector/J, Flyway MySQL module, or migration resource.
+- Consequence: an empty MySQL schema could neither be initialized nor validated, so the persistent profile was intentionally non-runnable.
+- Proposed phase: Phase 9B in `docs/config-center-persistent-deployment-plan.md`.
+- Likely files: server POM, Flyway migration, README, project map, plan status, and patch log.
+- API/data impact: adds the five existing JPA tables plus `flyway_schema_history` to a new MySQL schema; API paths/JSON and H2 behavior are unchanged. V1 becomes immutable after release and later schema changes require V2+.
+- Verification: MySQL 8.0.46 empty-schema migration and Hibernate validation passed under a dedicated account; repeated startup was a no-op; configuration and Feature Flag create/update/history/rollback persisted versions 1–3; H2 and full Maven verification passed on 2026-07-21.
+- Status: resolved in Phase 9B.
 
 ```markdown
 ### ISSUE-ID — concise title

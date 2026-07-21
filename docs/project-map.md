@@ -57,7 +57,8 @@ config-center/
 │       │       ├── application.yml
 │       │       ├── application-local.yml
 │       │       ├── application-test.yml
-│       │       └── application-mysql.yml
+│       │       ├── application-mysql.yml
+│       │       └── db/migration/V1__init_schema.sql
 │       └── test/
 │           └── resources/application.properties
 └── config-center-client/
@@ -120,7 +121,7 @@ HTTP request
   -> Controller
   -> Service
   -> Repository
-  -> H2 database
+  -> profile-selected H2 or MySQL database
 ```
 
 Cross-cutting paths:
@@ -351,8 +352,15 @@ Persistence profiles:
 
 - `local`: in-memory H2 in MySQL compatibility mode, Hibernate `ddl-auto=update`, Flyway disabled, and H2 Console enabled at `/h2-console`
 - `test`: randomized in-memory H2 database, Hibernate `ddl-auto=create-drop`, Flyway disabled, and H2 Console disabled; server tests activate it from `src/test/resources/application.properties`
-- `mysql`: requires `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, and `CONFIG_CENTER_DB_PASSWORD`, uses Hibernate `ddl-auto=validate`, enables Flyway, and disables H2 Console; missing variables fail before data-source creation and values are never logged by the validator
+- `mysql`: uses Connector/J, requires `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, and `CONFIG_CENTER_DB_PASSWORD`, applies Flyway migrations before Hibernate `ddl-auto=validate`, and disables H2 Console; missing variables fail before data-source creation and values are never logged by the validator
 - `.env` is ignored. `.env.example` contains placeholders only and documents the future Compose/application variable names.
+
+MySQL schema baseline:
+
+- `V1__init_schema.sql` is the immutable initial migration and creates `config_item`, `config_item_history`, `config_namespace_revision`, `feature_flag`, and `feature_flag_history`; Flyway owns `flyway_schema_history`.
+- Primary keys use MySQL identity columns. Current-row and namespace uniqueness plus history lookup indexes mirror the JPA annotations.
+- Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
+- MySQL 8.0.46 was verified from an empty schema through migration, JPA validation, API writes/history/rollback, and a no-op second startup using a dedicated non-root application account.
 
 Client defaults:
 
@@ -367,7 +375,7 @@ Client defaults:
 
 The stabilization phases are complete. The remaining limits are explicit product boundaries, not claims of implemented functionality:
 
-- The verified local/test data is in-memory H2. The MySQL profile boundary exists, but the MySQL driver and versioned Flyway schema remain Phase 9B work, so persistent startup is not yet supported.
+- Persistent MySQL startup is verified but still requires a manually managed database and environment variables; Docker image/Compose startup and automated MySQL CI remain Phase 9C/9D work.
 - The local API Key model is plaintext configuration for learning use and has no accounts, roles, JWT, or tenant model.
 - Rate-limit buckets and long-poll waiters are process-local and do not coordinate across server instances.
 - The client is a CLI demonstration rather than a published SDK; its package remains `com.example.democlient`.

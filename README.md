@@ -1,6 +1,6 @@
 # config-center
 
-`config-center` is a lightweight configuration center and Feature Flag learning project built with Java 17, Spring Boot 3, Spring Data JPA, H2, and a Maven multi-module layout. H2 remains the verified zero-dependency local and test database while the persistent MySQL path is introduced in explicit phases.
+`config-center` is a lightweight configuration center and Feature Flag learning project built with Java 17, Spring Boot 3, Spring Data JPA, H2, MySQL, Flyway, and a Maven multi-module layout. H2 remains the zero-dependency local and test database; the explicit `mysql` profile provides persistent storage with a versioned schema.
 
 The repository currently provides a verified local baseline for configuration versioning, rollback, conditional HTTP reads, long polling, Feature Flag evaluation, and a resilient Java demo client. It is intentionally smaller than a production control plane.
 
@@ -26,7 +26,7 @@ flowchart LR
     Rate --> Controllers["Config / Feature controllers"]
     Controllers --> Services["Transactional services"]
     Services --> Repositories["Spring Data JPA repositories"]
-    Repositories --> H2["Profile-selected persistence\nverified local/test: in-memory H2"]
+    Repositories --> H2["Profile-selected persistence\nH2 local/test; MySQL + Flyway persistent"]
     Services -. "after commit" .-> Watch["In-memory watch notifier"]
     Watch -. "complete long poll" .-> Controllers
     Metrics["Actuator + Micrometer"] --> Registry["Health / metrics / Prometheus"]
@@ -37,6 +37,7 @@ flowchart LR
 
 - JDK 17
 - Internet access on the first wrapper run so Maven 3.9.16 can be downloaded
+- MySQL 8.0 or later only when running the manual persistent profile
 
 Windows PowerShell:
 
@@ -63,7 +64,18 @@ After the build, start the executable server jar:
 java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=local
 ```
 
-Omitting `spring.profiles.active` also selects `local`. Automated server tests activate the isolated `test` profile. The `mysql` profile currently defines the environment-variable and schema-validation contract only; Phase 9B will add the MySQL driver and Flyway schema before persistent startup is supported.
+Omitting `spring.profiles.active` also selects `local`. Automated server tests activate the isolated `test` profile.
+
+For a manually managed empty MySQL database, grant a dedicated non-root account access to the schema, set the required values, and select `mysql`:
+
+```powershell
+$env:CONFIG_CENTER_DB_URL = "jdbc:mysql://localhost:3306/config_center?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+$env:CONFIG_CENTER_DB_USERNAME = "config_center_app"
+$env:CONFIG_CENTER_DB_PASSWORD = "replace-with-local-password"
+java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
+```
+
+Flyway creates or validates schema version 1 before Hibernate performs `ddl-auto=validate`. MySQL 8.0.46 was used for the verified persistent runtime path. Docker Compose startup is added separately in Phase 9C.
 
 For the deterministic request sequence below, disable only the local rate limiter while keeping all application behavior under demonstration:
 
@@ -215,7 +227,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 
 ## Known limits
 
-- The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The `mysql` profile contract uses `ddl-auto=validate` and enables Flyway, but the connector and migration schema are intentionally deferred to Phase 9B.
+- The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The `mysql` profile uses Connector/J, Flyway V1, and Hibernate `ddl-auto=validate`, but it still requires a manually managed database until Phase 9C adds Docker Compose.
 - The configured API Key is plaintext and intended only for local learning; it is not a replacement for secret management or user authentication.
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.
 - The client is a demonstration CLI, not a published SDK, and its Java package still uses the legacy name `com.example.democlient`.

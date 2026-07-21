@@ -236,7 +236,7 @@ git diff --check
 
 ---
 
-# Phase 9B｜MySQL 与 Flyway schema `[ ]`
+# Phase 9B｜MySQL 与 Flyway schema `[x]`
 
 ## Goal
 
@@ -317,6 +317,13 @@ V1 migration 必须准确创建：
 - Entity 与 schema 完全匹配；
 - H2 测试不回归；
 - 不需要 root 账号运行应用。
+
+## Completion evidence
+
+- 2026-07-21 完成：Connector/J、Flyway Core/MySQL 与 `V1__init_schema.sql` 已加入。
+- MySQL 8.0.46 空库成功执行 V1，Hibernate `ddl-auto=validate` 成功；第二次启动确认无重复 migration。
+- 应用使用专用非 root 账号完成配置与 Feature Flag 的写入、历史、回滚和重启持久化验证。
+- H2 服务端测试、全量 Maven 验证与 `git diff --check` 均通过；命令与结果记录于 `docs/patch-log.md`。
 
 ## Codex configuration
 

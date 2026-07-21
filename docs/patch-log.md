@@ -917,3 +917,64 @@ Separate common, local H2, isolated test H2, and future MySQL configuration so p
 
 - `docs/config-center-persistent-deployment-plan.md`: Phase 9A
 - `docs/dev-plan.md`: `P1-DATABASE-PROFILE-BOUNDARY`
+
+---
+
+## 2026-07-21 — Complete Phase 9B MySQL Flyway schema
+
+### Goal
+
+Make the explicit MySQL profile runnable from an empty database with Flyway as the sole schema owner and Hibernate limited to validation.
+
+### Changes
+
+- Added MySQL Connector/J, Flyway Core, and Flyway MySQL runtime dependencies while retaining H2 for local/test profiles.
+- Added immutable migration `V1__init_schema.sql` for all five JPA tables; Flyway creates and owns `flyway_schema_history`.
+- Matched entity identity strategy, uniqueness, history indexes, optimistic-lock columns, string limits/nullability, `DATETIME(6)` timestamps, allowlist capacity, and `utf8mb4`.
+- Verified the application with a dedicated non-root account against a fresh isolated MySQL 8.0.46 instance; no entity, repository, service, controller, API path, or JSON field changed.
+- Documented manual persistent startup and retained Dockerfile/Compose/CI work for Phases 9C/9D.
+
+### Files changed
+
+- `config-center-server/pom.xml`
+- `config-center-server/src/main/resources/db/migration/V1__init_schema.sql`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-persistent-deployment-plan.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `.\mvnw.cmd -q -B -pl config-center-server test`
+- Result: passed; 57 tests, 0 failures, 0 errors, and 0 skipped tests; all tests remained on isolated H2 with Flyway disabled.
+- Command: `.\mvnw.cmd -q -B -pl config-center-server -DskipTests package`
+- Result: passed and produced the executable server jar with Connector/J and Flyway support.
+- Commands: isolated MySQL initialization/start using `D:\Soft\CS\mysql-8.0.46-winx64\bin\mysqld.exe --no-defaults --initialize-insecure ...` followed by `mysqld.exe --no-defaults --port=33307 --bind-address=127.0.0.1 ...`; database and dedicated `config_center_app` grants were created only inside that isolated instance.
+- Result: passed; MySQL 8.0.46 started on an isolated data directory and random-use test port without accessing the existing host database.
+- Command: `java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql --server.port=18085 --rate-limit.enabled=false` with the three `CONFIG_CENTER_DB_*` variables set to the isolated database.
+- Result: passed twice; first startup applied V1 and Hibernate validation succeeded, while second startup reported schema version 1 up to date with no migration necessary.
+- API verification: configuration create/update/history/rollback produced versions `1,2,3` and namespace revision `3`; Feature Flag create/update/history/rollback produced versions `1,2,3`; after restart both current rows remained version 3 with three history rows.
+- Database verification: six tables including `flyway_schema_history`, successful Flyway version `1`, application row counts `1/3/1/1/3`, and schema character set `utf8mb4`.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 57 tests and client 31 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- Java 17, Spring Boot 3, Maven modules, API paths/JSON, entities, and H2 local/test behavior are unchanged.
+- Existing H2 memory data is not migrated. The MySQL profile initializes only an empty/new MySQL schema and requires explicit environment selection.
+- V1 is now the MySQL baseline; future schema changes must use additive V2+ migrations rather than editing V1 after release.
+
+### Residual risks
+
+- The automated test suite remains H2-only until Phase 9D adds dedicated MySQL CI coverage; Phase 9B evidence includes a real but manual MySQL integration run.
+- MySQL 8.0.46 is verified; other MySQL major versions have not been tested.
+- Persistent startup still requires an externally managed database and manual environment variables until Phase 9C adds Dockerfile and Compose.
+- Docker Hub image retrieval encountered repeated TLS/EOF failures during this run; Phase 9C container verification still depends on registry connectivity or a locally cached image.
+
+### Related plan items
+
+- `docs/config-center-persistent-deployment-plan.md`: Phase 9B
+- `docs/dev-plan.md`: `P1-MYSQL-SCHEMA-OWNERSHIP`
