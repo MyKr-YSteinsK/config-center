@@ -277,11 +277,8 @@ Goal: rebuild public documentation only after implementation is trustworthy.
 
 ## 4. Deferred enhancements
 
-The following enhancements remain outside the verified baseline and are not scheduled by this plan. Implement them only when explicitly requested:
+The following enhancements remain outside the verified stabilization baseline. MySQL, Flyway, and Docker Compose are now scheduled separately by `docs/config-center-persistent-deployment-plan.md`; the other items remain unscheduled unless explicitly requested:
 
-- MySQL or PostgreSQL
-- Flyway
-- Docker Compose
 - Feature watch
 - SSE or WebSocket
 - Prometheus/Grafana deployment
@@ -383,6 +380,17 @@ Add new defects below before assigning them to a phase.
 - API/data impact: Feature Flag write callers must now send an authorized `X-API-Key`; read, history, and evaluation APIs remain anonymous. No schema or data migration is required.
 - Verification: missing and wrong keys return HTTP 403/code 4031 for both Feature Flag writes without service invocation; the authorized key succeeds; all Feature Flag reads remain anonymous; blank/oversized API Key mappings fail Bean Validation; and `CONFIG_CENTER_API_KEY` overrides the development key. Focused and full Maven verification passed on 2026-07-16.
 - Status: resolved in Phase 8A.
+
+### P1-DATABASE-PROFILE-BOUNDARY — Shared H2 configuration blocked explicit persistence modes
+
+- Severity: P1
+- Evidence: the common `application.yml` owned the H2 URL, H2 Console, and Hibernate `ddl-auto=update`, while every Spring test inherited the same database profile.
+- Consequence: a future MySQL mode could accidentally inherit local-only behavior, and tests had no explicit guarantee that they remained isolated from external databases.
+- Proposed phase: Phase 9A in `docs/config-center-persistent-deployment-plan.md`.
+- Likely files: server profile configuration, environment template/ignore rules, configuration tests, README, project map, and patch log.
+- API/data impact: no API, entity, schema, or business-logic change; the default runtime remains in-memory H2 through the `local` profile.
+- Verification: the `test` context starts on a randomized H2 database without Docker, the `local` jar reports health `UP`, missing MySQL variables fail fast and list only their names, and focused/server/full Maven verification passed on 2026-07-21.
+- Status: resolved in Phase 9A.
 
 ```markdown
 ### ISSUE-ID — concise title

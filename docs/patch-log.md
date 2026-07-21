@@ -849,3 +849,71 @@ Apply the existing lightweight app/env API Key rule consistently to all configur
 
 - `docs/config-center-dev-plan-v2.md`: Phase 8A
 - `docs/dev-plan.md`: `P1-FEATURE-WRITE-AUTH`
+
+---
+
+## 2026-07-21 — Complete Phase 9A database profile baseline
+
+### Goal
+
+Separate common, local H2, isolated test H2, and future MySQL configuration so persistent deployment work cannot silently change the verified test baseline.
+
+### Changes
+
+- Kept common server, JPA, rate-limit, management, logging, and API Key settings in `application.yml`, with `local` as the default profile.
+- Added explicit `local`, `test`, and `mysql` profile files. Local/test disable Flyway; MySQL enables Flyway, disables H2 Console, uses `ddl-auto=validate`, and accepts database settings only from required environment variables.
+- Activated `test` for server tests and randomized its in-memory H2 database name.
+- Added early MySQL environment validation that reports missing variable names without logging their values.
+- Ignored `.env` and added a placeholder-only `.env.example`; no credentials were created or committed.
+- Added context/property tests and documented the new profile boundary without adding the MySQL driver, schema, Dockerfile, or business changes reserved for later phases.
+
+### Files changed
+
+- `.env.example`
+- `.gitignore`
+- `config-center-server/src/main/java/com/example/configcenter/config/MysqlEnvironmentPostProcessor.java`
+- `config-center-server/src/main/resources/META-INF/spring.factories`
+- `config-center-server/src/main/resources/application.yml`
+- `config-center-server/src/main/resources/application-local.yml`
+- `config-center-server/src/main/resources/application-test.yml`
+- `config-center-server/src/main/resources/application-mysql.yml`
+- `config-center-server/src/test/java/com/example/configcenter/config/ServerProfileConfigurationTest.java`
+- `config-center-server/src/test/resources/application.properties`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-persistent-deployment-plan.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `D:\Soft\CS\apache-maven-3.9.16\bin\mvn.cmd -q -B -pl config-center-server '-Dtest=ServerProfileConfigurationTest' test`
+- Result: passed; 4 tests, 0 failures, 0 errors, and 0 skipped tests.
+- Command: `D:\Soft\CS\apache-maven-3.9.16\bin\mvn.cmd -q -B -pl config-center-server test`
+- Result: passed; 57 tests, 0 failures, 0 errors, and 0 skipped tests; all Spring contexts used the isolated `test` profile.
+- Command in the managed Codex host after copying the existing Maven cache to a writable workspace directory: `$env:TEMP = 'D:\CS\config-center\.codex-test-tmp'; $env:TMP = 'D:\CS\config-center\.codex-test-tmp'; D:\Soft\CS\apache-maven-3.9.16\bin\mvn.cmd '-Dmaven.repo.local=D:\CS\config-center\.codex-m2-cache2' -o -q -B clean verify`
+- Result: passed; server 57 tests and client 31 tests, all with 0 failures, 0 errors, and 0 skipped tests. The temporary Maven/test directories were removed after verification.
+- Command: `java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=local --server.port=18084`
+- Result: passed; `/actuator/health` returned `UP` and the process was stopped after verification.
+- Command: `java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql --server.port=0` with the three database variables absent.
+- Result: passed; startup exited with code 1 and named `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, and `CONFIG_CENTER_DB_PASSWORD` without exposing values.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- Java 17, Spring Boot 3, Maven modules, API paths, JSON fields, entities, and business behavior are unchanged.
+- No-profile server startup remains zero-configuration H2 because `local` is the default profile.
+- Server tests now explicitly use isolated H2; no Docker or external MySQL is required.
+
+### Residual risks
+
+- The MySQL profile is intentionally not a runnable persistent mode until Phase 9B adds Connector/J and the versioned Flyway schema.
+- Host port 3306 is currently occupied by a local `mysqld`; later Compose work should retain the plan's default of not exposing MySQL to the host.
+- Maven Wrapper argument forwarding fails in the managed Codex PowerShell host, so verification used Maven 3.9.16 by absolute path. The wrapper itself still reports Maven 3.9.16 and remains the canonical documented entry point.
+- `.env.example` values are placeholders; a real ignored `.env` must be created only when the MySQL/Compose path is implemented.
+
+### Related plan items
+
+- `docs/config-center-persistent-deployment-plan.md`: Phase 9A
+- `docs/dev-plan.md`: `P1-DATABASE-PROFILE-BOUNDARY`

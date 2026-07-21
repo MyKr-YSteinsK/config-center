@@ -5,21 +5,11 @@ spring:
   application:
     name: config-center-server
 
-  datasource:
-    url: jdbc:h2:mem:configdb;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driverClassName: org.h2.Driver
-    username: sa
-    password:
+  profiles:
+    default: local
 
   jpa:
-    hibernate:
-      ddl-auto: update
     open-in-view: false
-
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
 
 # 这里把限流值配得比较小，是为了本地演示时更容易打出 429 和对应 metrics。
 rate-limit:

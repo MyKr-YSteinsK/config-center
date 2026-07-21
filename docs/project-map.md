@@ -1,6 +1,6 @@
 # Project Map
 
-Last reviewed against repository state: 2026-07-14
+Last reviewed against repository state: 2026-07-21
 Default branch at review time: `master`
 
 ## 1. Project boundary
@@ -27,6 +27,7 @@ config-center/
 ├── README.md
 ├── AGENTS.md
 ├── examples.http
+├── .env.example
 ├── mvnw
 ├── mvnw.cmd
 ├── .mvn/wrapper/
@@ -36,7 +37,8 @@ config-center/
 ├── docs/
 │   ├── project-map.md
 │   ├── dev-plan.md
-│   └── patch-log.md
+│   ├── patch-log.md
+│   └── config-center-persistent-deployment-plan.md
 ├── config-center-server/
 │   ├── pom.xml
 │   └── src/
@@ -51,8 +53,13 @@ config-center/
 │       │   │   ├── repository/
 │       │   │   ├── service/
 │       │   │   └── web/
-│       │   └── resources/application.yml
+│       │   └── resources/
+│       │       ├── application.yml
+│       │       ├── application-local.yml
+│       │       ├── application-test.yml
+│       │       └── application-mysql.yml
 │       └── test/
+│           └── resources/application.properties
 └── config-center-client/
     ├── pom.xml
     └── src/
@@ -330,17 +337,22 @@ Current behavior:
 
 ## 8. Runtime configuration baseline
 
-Server defaults:
+Server common defaults:
 
 - Port `8080`
-- In-memory H2 database in MySQL compatibility mode
-- Hibernate `ddl-auto=update` and Open Session in View disabled
-- H2 Console enabled at `/h2-console`
+- Default profile `local` and Open Session in View disabled
 - Rate limiting enabled with capacity `5`, refill rate `5` tokens per second, and at most `256` process-local buckets
 - Rate-limit capacity and bucket limits must be positive; refill rate must be non-negative
 - Micrometer meter `config_center_rate_limit_blocked` is a FunctionCounter; Prometheus exports it as `config_center_rate_limit_blocked_total`
 - Actuator exposes health, info, metrics, and Prometheus
 - One local API Key mapping: `${CONFIG_CENTER_API_KEY:kr-dev-key}` -> `demo-app/dev`
+
+Persistence profiles:
+
+- `local`: in-memory H2 in MySQL compatibility mode, Hibernate `ddl-auto=update`, Flyway disabled, and H2 Console enabled at `/h2-console`
+- `test`: randomized in-memory H2 database, Hibernate `ddl-auto=create-drop`, Flyway disabled, and H2 Console disabled; server tests activate it from `src/test/resources/application.properties`
+- `mysql`: requires `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, and `CONFIG_CENTER_DB_PASSWORD`, uses Hibernate `ddl-auto=validate`, enables Flyway, and disables H2 Console; missing variables fail before data-source creation and values are never logged by the validator
+- `.env` is ignored. `.env.example` contains placeholders only and documents the future Compose/application variable names.
 
 Client defaults:
 
@@ -355,7 +367,7 @@ Client defaults:
 
 The stabilization phases are complete. The remaining limits are explicit product boundaries, not claims of implemented functionality:
 
-- H2 data is in-memory and there is no Flyway or production database migration path.
+- The verified local/test data is in-memory H2. The MySQL profile boundary exists, but the MySQL driver and versioned Flyway schema remain Phase 9B work, so persistent startup is not yet supported.
 - The local API Key model is plaintext configuration for learning use and has no accounts, roles, JWT, or tenant model.
 - Rate-limit buckets and long-poll waiters are process-local and do not coordinate across server instances.
 - The client is a CLI demonstration rather than a published SDK; its package remains `com.example.democlient`.

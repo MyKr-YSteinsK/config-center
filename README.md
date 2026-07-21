@@ -1,6 +1,6 @@
 # config-center
 
-`config-center` is a lightweight configuration center and Feature Flag learning project built with Java 17, Spring Boot 3, Spring Data JPA, H2, and a Maven multi-module layout.
+`config-center` is a lightweight configuration center and Feature Flag learning project built with Java 17, Spring Boot 3, Spring Data JPA, H2, and a Maven multi-module layout. H2 remains the verified zero-dependency local and test database while the persistent MySQL path is introduced in explicit phases.
 
 The repository currently provides a verified local baseline for configuration versioning, rollback, conditional HTTP reads, long polling, Feature Flag evaluation, and a resilient Java demo client. It is intentionally smaller than a production control plane.
 
@@ -26,7 +26,7 @@ flowchart LR
     Rate --> Controllers["Config / Feature controllers"]
     Controllers --> Services["Transactional services"]
     Services --> Repositories["Spring Data JPA repositories"]
-    Repositories --> H2["In-memory H2\ncurrent + history + revision tables"]
+    Repositories --> H2["Profile-selected persistence\nverified local/test: in-memory H2"]
     Services -. "after commit" .-> Watch["In-memory watch notifier"]
     Watch -. "complete long poll" .-> Controllers
     Metrics["Actuator + Micrometer"] --> Registry["Health / metrics / Prometheus"]
@@ -60,13 +60,15 @@ The build runs both modules' tests and generates JaCoCo reports under:
 After the build, start the executable server jar:
 
 ```powershell
-java -jar config-center-server/target/config-center-server-1.0.0.jar
+java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=local
 ```
+
+Omitting `spring.profiles.active` also selects `local`. Automated server tests activate the isolated `test` profile. The `mysql` profile currently defines the environment-variable and schema-validation contract only; Phase 9B will add the MySQL driver and Flyway schema before persistent startup is supported.
 
 For the deterministic request sequence below, disable only the local rate limiter while keeping all application behavior under demonstration:
 
 ```powershell
-java -jar config-center-server/target/config-center-server-1.0.0.jar --rate-limit.enabled=false
+java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=local --rate-limit.enabled=false
 ```
 
 The default port is `8080`. Important local endpoints:
@@ -200,7 +202,9 @@ The local rate limiter groups requests by source address, HTTP method, and match
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `server.port` | `8080` | Server HTTP port |
-| `spring.datasource.url` | in-memory H2 | Local persistence; data is lost when the process ends |
+| `spring.profiles.default` | `local` | Uses the zero-dependency H2 development profile when no profile is selected |
+| `spring.datasource.url` (`local`) | in-memory H2 | Local persistence; data is lost when the process ends |
+| `CONFIG_CENTER_DB_URL` / `CONFIG_CENTER_DB_USERNAME` / `CONFIG_CENTER_DB_PASSWORD` (`mysql`) | none | Required MySQL connection settings; startup fails when any value is missing |
 | `rate-limit.enabled` | `true` | Enables per-process API rate limiting |
 | `rate-limit.capacity` | `5` | Initial token-bucket capacity |
 | `rate-limit.refill-per-second` | `5` | Token refill rate |
@@ -211,7 +215,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 
 ## Known limits
 
-- H2 is in-memory and uses Hibernate `ddl-auto=update`; there is no production database migration path yet.
+- The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The `mysql` profile contract uses `ddl-auto=validate` and enables Flyway, but the connector and migration schema are intentionally deferred to Phase 9B.
 - The configured API Key is plaintext and intended only for local learning; it is not a replacement for secret management or user authentication.
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.
 - The client is a demonstration CLI, not a published SDK, and its Java package still uses the legacy name `com.example.democlient`.
