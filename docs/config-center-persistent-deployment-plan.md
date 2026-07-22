@@ -535,7 +535,7 @@ docker compose logs --no-color config-center-server
 
 ---
 
-# Phase 9E｜持久化端到端验收与文档 `[ ]`
+# Phase 9E｜持久化端到端验收与文档 `[x]`
 
 ## Goal
 
@@ -612,6 +612,14 @@ git diff --check
 - Flyway 能从空库稳定重建；
 - 本地与 CI 验证一致；
 - 文档不夸大分布式或生产能力。
+
+## Completion evidence
+
+- 2026-07-22 完成：从已删除的 `config-center_mysql-data` 空卷执行 `docker compose up -d --build --wait`，MySQL 8.4.10 与服务端均健康；Flyway 应用 `V1__init_schema.sql`，Hibernate 验证通过。
+- 真实 HTTP 验收为 `demo-app/dev` 写入配置版本 1、2、回滚版本 3，以及 Feature Flag 版本 1、2、回滚版本 3；两项历史均保留三条，namespace revision 为 3。
+- 单独重启服务端、`docker compose down` 后完整重启均保留当前值、历史、Feature Flag 和 namespace revision；`docker compose down -v` 后旧配置返回 HTTP 404，Flyway 再次将空库迁移到 V1。
+- README 已区分 H2 与 Compose 路径，并记录 `.env`、日志、迁移规则、volume、端口冲突、`down`/`down -v` 和单实例边界。
+- 本地 `clean verify` 与 `-Pmysql-it verify` 复验结果记录于本阶段 patch log。GitHub Actions workflow 已配置，但尚未推送，因此没有远端 run 链接或状态。
 
 ## Codex configuration
 

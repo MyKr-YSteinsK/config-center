@@ -113,6 +113,14 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 
 Flyway creates or validates schema version 1 before Hibernate performs `ddl-auto=validate`. MySQL 8.0.46 was verified for the manually managed path and MySQL 8.4.10 for the Compose path.
 
+Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline: add a new `V2__...sql` migration for later schema changes rather than editing an applied migration. Confirm the applied/unchanged migration from the server log:
+
+```powershell
+docker compose logs --no-color config-center-server | Select-String "Migrating schema|up to date"
+```
+
+If host port `8080` is occupied, set `SERVER_PORT=8081` (or another free port) in `.env` before `docker compose up`. MySQL deliberately has no host-port mapping in the persistent Compose path, so it does not contend for local port `3306`.
+
 To run the isolated MySQL regression locally, start only the dedicated test database, export credentials matching `MYSQL_USER` and `MYSQL_PASSWORD` in the ignored `.env`, then activate the Maven profile:
 
 ```powershell
@@ -263,6 +271,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 ## Known limits
 
 - The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The persistent Compose path and MySQL integration job each use a single MySQL version and a single server process; there is no database-version matrix.
+- Persistent data is a local Docker named volume, not a backup or production migration strategy. `down -v` intentionally destroys that development data and rebuilds an empty schema through Flyway.
 - The configured API Key is plaintext and intended only for local learning; it is not a replacement for secret management or user authentication.
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.
 - The client is a demonstration CLI, not a published SDK, and its Java package still uses the legacy name `com.example.democlient`.

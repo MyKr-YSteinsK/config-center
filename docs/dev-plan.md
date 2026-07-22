@@ -277,7 +277,7 @@ Goal: rebuild public documentation only after implementation is trustworthy.
 
 ## 4. Deferred enhancements
 
-The following enhancements remain outside the verified stabilization baseline. MySQL, Flyway, Docker Compose, and automated MySQL integration verification are implemented through Phase 9D; persistent end-to-end acceptance and final documentation remain scheduled for Phase 9E in `docs/config-center-persistent-deployment-plan.md`. The other items remain unscheduled unless explicitly requested:
+The following enhancements remain outside the verified stabilization baseline. MySQL, Flyway, Docker Compose, automated MySQL integration verification, and persistent end-to-end acceptance are implemented through Phase 9E in `docs/config-center-persistent-deployment-plan.md`. The other items remain unscheduled unless explicitly requested:
 
 - Feature watch
 - SSE or WebSocket

@@ -1107,3 +1107,64 @@ Add a repeatable MySQL/Flyway regression layer without coupling the fast H2 buil
 
 - `docs/config-center-persistent-deployment-plan.md`: Phase 9D
 - `docs/dev-plan.md`: `P1-MYSQL-AUTOMATED-REGRESSION`
+
+---
+
+## 2026-07-22 — Complete Phase 9E persistent end-to-end acceptance and documentation
+
+### Goal
+
+Finish the persistent MySQL/Flyway/Docker Compose path as a reproducible learning-project baseline, with real data-retention and empty-volume-rebuild evidence.
+
+### Changes
+
+- Completed the real Compose acceptance scenario without changing application code, API paths, JSON, entities, or migrations.
+- Updated README with immutable Flyway migration rules, a command to confirm migration activity, persistent-path port-conflict guidance, and the deliberate development-volume boundary.
+- Updated the project map and development plan to record Phase 9E completion and retain explicit single-instance/non-production limitations.
+- Marked Phase 9E complete with local E2E evidence; the existing GitHub Actions workflow remains unpushed, so no remote run URL exists yet.
+
+### Files changed
+
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-persistent-deployment-plan.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Commands: `docker compose down -v --remove-orphans`, `docker compose up -d --build --wait`, and `docker compose ps`.
+- Result: passed; the verified `config-center_mysql-data` volume was deleted, the Java 17 image rebuilt with Maven Wrapper, MySQL 8.4.10 and `config-center-server` became healthy, and Flyway applied migration V1 to the empty `config_center` schema.
+- Commands: authorized HTTP `POST /api/configs` for versions 1 and 2, `POST /api/configs/rollback` to version 3, `GET /api/configs/history`, `GET /api/configs/watch`, authorized Feature Flag versions 1 and 2, `POST /api/features/rollback` to version 3, and both history reads.
+- Result: passed; configuration and Feature Flag each retained three history rows with `ROLLBACK` as the newest action, current version 3 restored the version-1 value/rule, and `demo-app/dev` namespace revision was 3.
+- Commands: `docker compose restart config-center-server`, `docker compose up -d --wait config-center-server`, then the same anonymous reads and watch request.
+- Result: passed; current configuration/version/history, Feature Flag/version/history, and namespace revision all persisted. Server logs showed the initial V1 migration and a subsequent `Schema ... is up to date` no-op Flyway startup.
+- Commands: `docker compose down --remove-orphans`, `docker compose up -d --wait`, then the same reads and watch request.
+- Result: passed; the named volume survived full Compose shutdown and the same persistent state remained available.
+- Commands: `docker compose down -v --remove-orphans`, `docker compose up -d --wait`, `curl.exe -sS -o NUL -w '%{http_code}' http://localhost:8080/api/configs/phase9e.persist?app=demo-app&env=dev`, and server-log migration check.
+- Result: passed; the prior configuration returned HTTP 404, and Flyway applied V1 again to the recreated empty volume. The final main Compose runtime remains healthy with an empty V1 schema.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; 88 server/client tests, 0 failures, 0 errors.
+- Command: with isolated `config-center-it` MySQL Compose service and the existing `CONFIG_CENTER_DB_*` contract, `.\mvnw.cmd -q -B -Pmysql-it verify`
+- Result: passed; the same 88 standard tests plus 4 MySQL integration tests, all with 0 failures and 0 errors. The temporary integration container, network, and volume were removed afterward.
+- Command: `docker compose config`
+- Result: passed; the persistent topology resolves to only MySQL and the server with the named data volume and internal MySQL port.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- Java 17, Maven Wrapper 3.9.16, Spring Boot 3, the Maven module layout, API paths/JSON, H2 local/test behavior, MySQL profile, and Flyway V1 remain unchanged.
+- Normal `docker compose down` preserves the named development volume; `docker compose down -v` intentionally recreates an empty V1 schema.
+- The final checked runtime is a single MySQL 8.4.10 instance and a single server process; Watch and rate-limit state remain process-local.
+
+### Residual risks
+
+- Flyway continues to warn that MySQL 8.4 is newer than its tested support ceiling of MySQL 8.1. Local E2E and automated MySQL 8.4.10 verification passed, but the upstream support warning remains.
+- GitHub Actions has not run remotely because the local commits are not pushed; the workflow has local-equivalent command evidence but no hosted run link yet.
+- The Docker named volume, ignored `.env`, API Key, and one-instance deployment are local-development mechanisms, not production backup, secret-management, HA, or distributed-coordination solutions.
+
+### Related plan items
+
+- `docs/config-center-persistent-deployment-plan.md`: Phase 9E
+- `docs/dev-plan.md`: persistent deployment stabilization complete
