@@ -1048,3 +1048,62 @@ Provide a one-command, two-service persistent backend with a minimal Java 17 ser
 
 - `docs/config-center-persistent-deployment-plan.md`: Phase 9C
 - `docs/dev-plan.md`: `P1-PERSISTENT-COMPOSE-RUNTIME`
+
+---
+
+## 2026-07-22 — Complete Phase 9D automated MySQL verification
+
+### Goal
+
+Add a repeatable MySQL/Flyway regression layer without coupling the fast H2 build to Docker or introducing a second container-test framework.
+
+### Changes
+
+- Added the server `mysql-it` Maven profile, using Failsafe to run only explicitly named MySQL integration tests during `verify`.
+- Added four MySQL 8.4 integration tests covering empty and repeated Flyway migration, Spring Context/JPA validation, configuration and Feature Flag upsert/history/rollback, namespace revision through a new connection, real uniqueness and optimistic-lock enforcement, and Chinese/emoji round trips.
+- Added `compose.mysql-it.yml` for a loopback-only `config_center_it` database on port 33306; using Compose project `config-center-it` keeps its container, network, and volume separate from the persistent development runtime.
+- Retained the existing GitHub Actions H2 `build-test` job and added an independent MySQL 8.4 service-container job with per-run credentials and failure artifact capture.
+- Documented the canonical local MySQL regression command and synchronized the project map and phase status.
+
+### Files changed
+
+- `.github/workflows/ci.yml`
+- `compose.mysql-it.yml`
+- `config-center-server/pom.xml`
+- `config-center-server/src/test/java/com/example/configcenter/MysqlPersistenceIT.java`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-persistent-deployment-plan.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml up -d --wait mysql`
+- Result: passed; a fresh isolated MySQL 8.4.10 service and dedicated volume became healthy on loopback port 33306 without changing the main Compose project.
+- Command: with `CONFIG_CENTER_DB_URL=jdbc:mysql://127.0.0.1:33306/config_center_it?...`, `CONFIG_CENTER_DB_USERNAME` matching local `MYSQL_USER`, and `CONFIG_CENTER_DB_PASSWORD` matching local `MYSQL_PASSWORD`, `.\mvnw.cmd -q -B -pl config-center-server -Pmysql-it failsafe:integration-test failsafe:verify`
+- Result: passed; 4 MySQL integration tests ran with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml down -v --remove-orphans`, followed by `.\mvnw.cmd -q -B clean verify`
+- Result: passed with the MySQL integration service absent; server 57 tests and client 31 tests ran with 0 failures and 0 errors, proving the normal build remains H2-only and Docker-free.
+- Command: recreate the isolated MySQL service, export the same three `CONFIG_CENTER_DB_*` values without `CONFIG_CENTER_API_KEY`, then run `.\mvnw.cmd -q -B -Pmysql-it verify`
+- Result: passed; the normal 88 tests and 4 MySQL integration tests all completed with 0 failures and 0 errors. Flyway applied V1 to the empty schema and the repeated migration executed 0 changes.
+- Command: `docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml down -v --remove-orphans`
+- Result: passed; the temporary integration container, network, and volume were removed.
+
+### Compatibility
+
+- Java 17, Maven Wrapper 3.9.16, Spring Boot 3, module structure, API paths/JSON, entities, Flyway V1, and H2 local/test behavior are unchanged.
+- The `mysql-it` profile is opt-in; normal `clean verify` neither starts nor connects to MySQL.
+- CI and local integration runs use the existing `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, and `CONFIG_CENTER_DB_PASSWORD` contract. CI does not read the ignored local `.env`.
+
+### Residual risks
+
+- The current Flyway release still warns that MySQL 8.4 is newer than its tested support ceiling of MySQL 8.1; MySQL 8.4.10 now has automated behavioral coverage, but the upstream support warning remains.
+- The CI job intentionally tests only MySQL 8.4, not a database-version matrix.
+- The GitHub-hosted jobs cannot run until this commit is pushed or included in a pull request; the identical Maven command and service topology passed locally, while remote workflow execution remains externally observable evidence.
+- The local Compose regression path reads project-only development credentials from the ignored `.env`; these must never be production secrets.
+
+### Related plan items
+
+- `docs/config-center-persistent-deployment-plan.md`: Phase 9D
+- `docs/dev-plan.md`: `P1-MYSQL-AUTOMATED-REGRESSION`

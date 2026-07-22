@@ -113,6 +113,19 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 
 Flyway creates or validates schema version 1 before Hibernate performs `ddl-auto=validate`. MySQL 8.0.46 was verified for the manually managed path and MySQL 8.4.10 for the Compose path.
 
+To run the isolated MySQL regression locally, start only the dedicated test database, export credentials matching `MYSQL_USER` and `MYSQL_PASSWORD` in the ignored `.env`, then activate the Maven profile:
+
+```powershell
+docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml up -d --wait mysql
+$env:CONFIG_CENTER_DB_URL = "jdbc:mysql://127.0.0.1:33306/config_center_it?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+$env:CONFIG_CENTER_DB_USERNAME = "replace-with-MYSQL_USER"
+$env:CONFIG_CENTER_DB_PASSWORD = "replace-with-MYSQL_PASSWORD"
+.\mvnw.cmd -q -B -Pmysql-it verify
+docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml down -v
+```
+
+The `mysql-it` profile uses Failsafe and the dedicated `config_center_it` schema. The normal `clean verify` remains H2-only and does not require Docker.
+
 ## Verified local demonstration
 
 The following PowerShell sequence assumes a freshly started server using the deterministic command above. The default development API Key authorizes configuration and Feature Flag writes for `demo-app/dev`. Set `CONFIG_CENTER_API_KEY` before starting the server to replace the default key.
@@ -249,7 +262,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 
 ## Known limits
 
-- The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The persistent Compose path uses a single MySQL and a single server instance; automated MySQL CI remains Phase 9D work.
+- The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The persistent Compose path and MySQL integration job each use a single MySQL version and a single server process; there is no database-version matrix.
 - The configured API Key is plaintext and intended only for local learning; it is not a replacement for secret management or user authentication.
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.
 - The client is a demonstration CLI, not a published SDK, and its Java package still uses the legacy name `com.example.democlient`.

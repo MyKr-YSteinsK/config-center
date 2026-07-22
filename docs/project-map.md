@@ -1,6 +1,6 @@
 # Project Map
 
-Last reviewed against repository state: 2026-07-21
+Last reviewed against repository state: 2026-07-22
 Default branch at review time: `master`
 
 ## 1. Project boundary
@@ -30,6 +30,7 @@ config-center/
 ├── .env.example
 ├── .dockerignore
 ├── compose.yml
+├── compose.mysql-it.yml
 ├── mvnw
 ├── mvnw.cmd
 ├── .mvn/
@@ -65,6 +66,7 @@ config-center/
 │       │       ├── application-mysql.yml
 │       │       └── db/migration/V1__init_schema.sql
 │       └── test/
+│           ├── java/com/example/configcenter/MysqlPersistenceIT.java
 │           └── resources/application.properties
 └── config-center-client/
     ├── pom.xml
@@ -367,6 +369,9 @@ MySQL schema baseline:
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
 - MySQL 8.0.46 was verified from an empty schema through migration, JPA validation, API writes/history/rollback, and a no-op second startup using a dedicated non-root application account.
 - The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and host port 8080 for the server. MySQL 8.4.10 was verified through empty initialization, API write, retained-volume restart, and deleted-volume rebuild.
+- The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies Flyway empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback, persisted namespace revision, MySQL uniqueness and optimistic locking, and `utf8mb4` data.
+- `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
+- GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.
 - The server image is built from the repository root with Maven Wrapper on Maven 3.9.16/JDK 17, then copies only the executable server JAR into a Java 17 JRE image and runs it as a non-root user.
 
 Client defaults:
@@ -382,7 +387,7 @@ Client defaults:
 
 The stabilization phases are complete. The remaining limits are explicit product boundaries, not claims of implemented functionality:
 
-- Persistent MySQL startup is available through Docker Compose; automated MySQL integration verification and CI remain Phase 9D work.
+- Persistent MySQL startup and automated MySQL 8.4 regression are available; the CI coverage intentionally has no multi-version database matrix.
 - The local API Key model is plaintext configuration for learning use and has no accounts, roles, JWT, or tenant model.
 - Rate-limit buckets and long-poll waiters are process-local and do not coordinate across server instances.
 - The client is a CLI demonstration rather than a published SDK; its package remains `com.example.democlient`.

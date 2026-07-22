@@ -1,6 +1,6 @@
 # Development Plan
 
-Last updated: 2026-07-14
+Last updated: 2026-07-22
 
 ## 1. Objective
 
@@ -277,7 +277,7 @@ Goal: rebuild public documentation only after implementation is trustworthy.
 
 ## 4. Deferred enhancements
 
-The following enhancements remain outside the verified stabilization baseline. MySQL, Flyway, and Docker Compose are implemented through Phase 9C; automated MySQL integration verification remains scheduled for Phase 9D in `docs/config-center-persistent-deployment-plan.md`. The other items remain unscheduled unless explicitly requested:
+The following enhancements remain outside the verified stabilization baseline. MySQL, Flyway, Docker Compose, and automated MySQL integration verification are implemented through Phase 9D; persistent end-to-end acceptance and final documentation remain scheduled for Phase 9E in `docs/config-center-persistent-deployment-plan.md`. The other items remain unscheduled unless explicitly requested:
 
 - Feature watch
 - SSE or WebSocket
@@ -413,6 +413,17 @@ Add new defects below before assigning them to a phase.
 - API/data impact: no API, JSON, entity, or migration change; Compose selects the existing `mysql` profile and persists the existing V1 schema in a named volume.
 - Verification: the no-cache Java 17 image build passed; MySQL 8.4.10 and server healthchecks passed; Flyway initialized V1; Actuator, Swagger, ping, and authorized configuration write passed; normal `down`/`up` retained data; `down -v` removed data and reapplied V1; full Maven verification passed on 2026-07-22.
 - Status: resolved in Phase 9C.
+
+### P1-MYSQL-AUTOMATED-REGRESSION — Persistent behavior lacked repeatable CI coverage
+
+- Severity: P1
+- Evidence: MySQL/Flyway behavior was proven only by manual local runs; the default H2 suite could not detect MySQL migration, constraint, locking, or character-set regressions.
+- Consequence: a schema or persistence change could pass `clean verify` while breaking the persistent runtime.
+- Proposed phase: Phase 9D in `docs/config-center-persistent-deployment-plan.md`.
+- Likely files: server Maven profile and integration test, CI workflow, isolated Compose override, README, project map, plan status, and patch log.
+- API/data impact: no API, JSON, entity, or migration change; adds only an isolated test schema and verification path.
+- Verification: Docker-free `clean verify` passed with 88 tests; `-Pmysql-it verify` passed the same 88 tests plus 4 MySQL 8.4.10 integration tests covering Flyway, JPA validation, lifecycle/history/rollback, revision persistence, constraints, optimistic locking, and UTF-8/emoji on 2026-07-22.
+- Status: resolved in Phase 9D.
 
 ```markdown
 ### ISSUE-ID — concise title

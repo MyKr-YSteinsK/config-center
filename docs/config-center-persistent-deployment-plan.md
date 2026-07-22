@@ -444,7 +444,7 @@ docker compose logs --no-color config-center-server
 
 ---
 
-# Phase 9D｜自动化 MySQL 验证与 CI `[ ]`
+# Phase 9D｜自动化 MySQL 验证与 CI `[x]`
 
 ## Goal
 
@@ -520,6 +520,13 @@ docker compose logs --no-color config-center-server
 - MySQL 特有行为有自动回归；
 - Flyway migration 进入 CI 门禁；
 - 本地和 CI 使用同一套环境变量契约。
+
+## Completion evidence
+
+- 2026-07-22 完成：新增 `mysql-it` Maven/Failsafe profile、独立 `config_center_it` Compose override、4 个真实 MySQL 8.4.10 集成测试，以及 GitHub Actions `mysql-integration` service-container job。
+- 默认 `clean verify` 在集成 MySQL 关闭后通过 88 个 H2/客户端测试；`-Pmysql-it verify` 通过相同 88 个测试及 4 个 MySQL 测试，均为 0 failures / 0 errors。
+- MySQL 自动验证覆盖空库 V1、重复 migration、Spring Context/JPA validate、配置与 Feature Flag 的 upsert/history/rollback、跨连接 revision、唯一约束、乐观锁和中文/emoji。
+- CI 保留独立 H2 job，MySQL job 使用每次运行生成的凭据、不读取 `.env`，失败时上传 Surefire/Failsafe、应用和 MySQL service 日志。GitHub 托管 job 将在本提交推送或 PR 创建后实际触发。
 
 ## Codex configuration
 

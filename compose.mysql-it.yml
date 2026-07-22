@@ -1,0 +1,6 @@
+services:
+  mysql:
+    environment:
+      MYSQL_DATABASE: config_center_it
+    ports:
+      - "127.0.0.1:${MYSQL_IT_PORT:-33306}:3306"
