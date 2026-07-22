@@ -37,7 +37,8 @@ flowchart LR
 
 - JDK 17
 - Internet access on the first wrapper run so Maven 3.9.16 can be downloaded
-- MySQL 8.0 or later only when running the manual persistent profile
+- Docker Desktop with Docker Compose only for the persistent startup path
+- MySQL 8.0 or later only when running the manually managed persistent profile
 
 Windows PowerShell:
 
@@ -56,7 +57,7 @@ The build runs both modules' tests and generates JaCoCo reports under:
 - `config-center-server/target/site/jacoco/index.html`
 - `config-center-client/target/site/jacoco/index.html`
 
-## Run the server
+## Quick start: H2
 
 After the build, start the executable server jar:
 
@@ -65,17 +66,6 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 ```
 
 Omitting `spring.profiles.active` also selects `local`. Automated server tests activate the isolated `test` profile.
-
-For a manually managed empty MySQL database, grant a dedicated non-root account access to the schema, set the required values, and select `mysql`:
-
-```powershell
-$env:CONFIG_CENTER_DB_URL = "jdbc:mysql://localhost:3306/config_center?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
-$env:CONFIG_CENTER_DB_USERNAME = "config_center_app"
-$env:CONFIG_CENTER_DB_PASSWORD = "replace-with-local-password"
-java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
-```
-
-Flyway creates or validates schema version 1 before Hibernate performs `ddl-auto=validate`. MySQL 8.0.46 was used for the verified persistent runtime path. Docker Compose startup is added separately in Phase 9C.
 
 For the deterministic request sequence below, disable only the local rate limiter while keeping all application behavior under demonstration:
 
@@ -90,6 +80,38 @@ The default port is `8080`. Important local endpoints:
 - Health: `http://localhost:8080/actuator/health`
 - Metrics: `http://localhost:8080/actuator/metrics`
 - Prometheus: `http://localhost:8080/actuator/prometheus`
+
+## Persistent start: MySQL + Docker Compose
+
+Create a local environment file and replace every `replace-with-...` value with project-only development credentials. Do not reuse production passwords or API Keys; `.env` is ignored by Git.
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+docker compose ps
+```
+
+Compose starts only `mysql` and `config-center-server`. MySQL 8.4 stores data in the named volume `config-center_mysql-data` and is not exposed on the host; the server waits for MySQL to become healthy and is then available on `${SERVER_PORT:-8080}`.
+
+Useful diagnostics:
+
+```powershell
+docker compose logs --no-color config-center-server
+docker compose logs --no-color mysql
+```
+
+`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume; the next startup creates an empty database and reapplies `config-center-server/src/main/resources/db/migration/V1__init_schema.sql`.
+
+For a manually managed empty MySQL database, grant a dedicated non-root account access to the schema, set the required values, and select `mysql`:
+
+```powershell
+$env:CONFIG_CENTER_DB_URL = "jdbc:mysql://localhost:3306/config_center?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+$env:CONFIG_CENTER_DB_USERNAME = "config_center_app"
+$env:CONFIG_CENTER_DB_PASSWORD = "replace-with-local-password"
+java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
+```
+
+Flyway creates or validates schema version 1 before Hibernate performs `ddl-auto=validate`. MySQL 8.0.46 was verified for the manually managed path and MySQL 8.4.10 for the Compose path.
 
 ## Verified local demonstration
 
@@ -227,7 +249,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 
 ## Known limits
 
-- The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The `mysql` profile uses Connector/J, Flyway V1, and Hibernate `ddl-auto=validate`, but it still requires a manually managed database until Phase 9C adds Docker Compose.
+- The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The persistent Compose path uses a single MySQL and a single server instance; automated MySQL CI remains Phase 9D work.
 - The configured API Key is plaintext and intended only for local learning; it is not a replacement for secret management or user authentication.
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.
 - The client is a demonstration CLI, not a published SDK, and its Java package still uses the legacy name `com.example.democlient`.

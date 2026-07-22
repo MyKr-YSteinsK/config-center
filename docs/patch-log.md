@@ -978,3 +978,73 @@ Make the explicit MySQL profile runnable from an empty database with Flyway as t
 
 - `docs/config-center-persistent-deployment-plan.md`: Phase 9B
 - `docs/dev-plan.md`: `P1-MYSQL-SCHEMA-OWNERSHIP`
+
+---
+
+## 2026-07-22 — Complete Phase 9C persistent Docker Compose runtime
+
+### Goal
+
+Provide a one-command, two-service persistent backend with a minimal Java 17 server image, health-ordered MySQL startup, and explicit data-volume behavior.
+
+### Changes
+
+- Added a multi-stage server Dockerfile using Maven 3.9.16/JDK 17 for the Maven Wrapper build and a Java 17 JRE for the non-root runtime; only the executable server JAR enters the runtime image.
+- Added root `compose.yml` with only MySQL 8.4 and the server, internal-only MySQL networking, environment-injected credentials/API Key, MySQL/server healthchecks, and named volume `config-center_mysql-data`.
+- Added `.dockerignore`, a Docker-specific Maven repository settings file with Maven Central as the default, and the configurable server host port placeholder.
+- Documented H2 quick start versus persistent Compose startup, logs, migration ownership, and the difference between `down` and `down -v`.
+- Verified first initialization, retained-volume restart, and deleted-volume empty rebuild without changing API paths, entities, JSON fields, or Flyway V1.
+
+### Files changed
+
+- `.dockerignore`
+- `.env.example`
+- `.mvn/docker-settings.xml`
+- `compose.yml`
+- `config-center-server/Dockerfile`
+- `README.md`
+- `docs/project-map.md`
+- `docs/dev-plan.md`
+- `docs/config-center-persistent-deployment-plan.md`
+- `docs/patch-log.md`
+
+### Verification
+
+- Command: `docker compose config`
+- Result: passed; exactly `mysql` and `config-center-server` services plus named volume `mysql-data` were resolved, with credentials sourced from the ignored local `.env`.
+- Command: `docker compose build --no-cache config-center-server`
+- Result: passed; Maven Wrapper dependency prefetch and server packaging completed from the repository root. The final image used Java 17.0.19, ran as UID 100 `configcenter`, contained `wget` for healthchecks, and was approximately 128 MB.
+- Command: `docker compose up -d`
+- Result: passed; MySQL became healthy before the server started, then both services became healthy. MySQL exposed only container ports while the server mapped host port 8080.
+- Command: `docker compose ps`
+- Result: passed; `mysql:8.4` and `config-center-config-center-server` were both healthy.
+- Command: `docker compose logs --no-color config-center-server`
+- Result: passed; the first startup connected through service name `mysql`, detected MySQL 8.4, validated one migration, applied V1 to an empty schema, completed Hibernate validation, and started successfully.
+- Commands: `Invoke-RestMethod http://localhost:8080/actuator/health`, `Invoke-WebRequest http://localhost:8080/swagger-ui/index.html`, `Invoke-RestMethod http://localhost:8080/api/ping`, and an authorized `POST http://localhost:8080/api/configs` for `demo-app/dev/phase9c.persist`.
+- Result: passed; health was `UP`, Swagger returned HTTP 200, ping returned code 0, and the configuration was created at version 1.
+- Commands: `docker compose down`, `docker compose up -d`, then `GET /api/configs/phase9c.persist?app=demo-app&env=dev`.
+- Result: passed; volume `config-center_mysql-data` remained, the configuration retained version 1/value `before-restart`, and Flyway reported schema version 1 up to date with no migration necessary.
+- Commands: `docker compose down -v`, `docker compose up -d`, then the same configuration read and Flyway history query.
+- Result: passed; the volume was removed/recreated, the previous configuration returned HTTP 404, and Flyway successfully applied V1 to the empty MySQL 8.4.10 database.
+- Command: `.\mvnw.cmd -q -B clean verify`
+- Result: passed; server 57 tests and client 31 tests, all with 0 failures, 0 errors, and 0 skipped tests.
+- Command: `git diff --check`
+- Result: passed.
+
+### Compatibility
+
+- Java 17, Spring Boot 3, Maven modules, API paths/JSON, entities, Flyway V1, and the H2 local/test path are unchanged.
+- Compose selects the existing `mysql` profile and supplies the existing `CONFIG_CENTER_DB_*` and `CONFIG_CENTER_API_KEY` settings; MySQL is not exposed on the host by default.
+- `docker compose down` preserves data; `docker compose down -v` intentionally deletes the project database volume.
+
+### Residual risks
+
+- The current Flyway release logs that MySQL 8.4 is newer than its tested support ceiling of MySQL 8.1. Migration and restart verification passed on MySQL 8.4.10, but Phase 9D should keep this combination under automated integration coverage.
+- Automated MySQL integration tests and CI are still pending Phase 9D; this phase provides verified local runtime evidence only.
+- The topology intentionally remains one MySQL and one server instance. Watch notifications and rate limiting remain process-local.
+- `.env` holds plaintext local-development credentials and an API Key; it is ignored by Git and must not contain production secrets.
+
+### Related plan items
+
+- `docs/config-center-persistent-deployment-plan.md`: Phase 9C
+- `docs/dev-plan.md`: `P1-PERSISTENT-COMPOSE-RUNTIME`

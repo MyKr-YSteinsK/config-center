@@ -277,7 +277,7 @@ Goal: rebuild public documentation only after implementation is trustworthy.
 
 ## 4. Deferred enhancements
 
-The following enhancements remain outside the verified stabilization baseline. MySQL and Flyway are implemented by Phase 9B, while Docker Compose remains scheduled by `docs/config-center-persistent-deployment-plan.md`; the other items remain unscheduled unless explicitly requested:
+The following enhancements remain outside the verified stabilization baseline. MySQL, Flyway, and Docker Compose are implemented through Phase 9C; automated MySQL integration verification remains scheduled for Phase 9D in `docs/config-center-persistent-deployment-plan.md`. The other items remain unscheduled unless explicitly requested:
 
 - Feature watch
 - SSE or WebSocket
@@ -402,6 +402,17 @@ Add new defects below before assigning them to a phase.
 - API/data impact: adds the five existing JPA tables plus `flyway_schema_history` to a new MySQL schema; API paths/JSON and H2 behavior are unchanged. V1 becomes immutable after release and later schema changes require V2+.
 - Verification: MySQL 8.0.46 empty-schema migration and Hibernate validation passed under a dedicated account; repeated startup was a no-op; configuration and Feature Flag create/update/history/rollback persisted versions 1–3; H2 and full Maven verification passed on 2026-07-21.
 - Status: resolved in Phase 9B.
+
+### P1-PERSISTENT-COMPOSE-RUNTIME — Persistent startup required manual database provisioning
+
+- Severity: P1
+- Evidence: the MySQL profile and Flyway schema were runnable, but the repository had no server image, Compose topology, health ordering, or managed data volume.
+- Consequence: a new user could not start or verify the complete persistent backend with one command, and restart/delete semantics were undocumented.
+- Proposed phase: Phase 9C in `docs/config-center-persistent-deployment-plan.md`.
+- Likely files: server Dockerfile, root Compose and Docker ignore files, environment example, README, project map, plan status, and patch log.
+- API/data impact: no API, JSON, entity, or migration change; Compose selects the existing `mysql` profile and persists the existing V1 schema in a named volume.
+- Verification: the no-cache Java 17 image build passed; MySQL 8.4.10 and server healthchecks passed; Flyway initialized V1; Actuator, Swagger, ping, and authorized configuration write passed; normal `down`/`up` retained data; `down -v` removed data and reapplied V1; full Maven verification passed on 2026-07-22.
+- Status: resolved in Phase 9C.
 
 ```markdown
 ### ISSUE-ID — concise title

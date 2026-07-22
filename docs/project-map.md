@@ -28,9 +28,13 @@ config-center/
 ├── AGENTS.md
 ├── examples.http
 ├── .env.example
+├── .dockerignore
+├── compose.yml
 ├── mvnw
 ├── mvnw.cmd
-├── .mvn/wrapper/
+├── .mvn/
+│   ├── wrapper/
+│   └── docker-settings.xml
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
@@ -40,6 +44,7 @@ config-center/
 │   ├── patch-log.md
 │   └── config-center-persistent-deployment-plan.md
 ├── config-center-server/
+│   ├── Dockerfile
 │   ├── pom.xml
 │   └── src/
 │       ├── main/
@@ -353,7 +358,7 @@ Persistence profiles:
 - `local`: in-memory H2 in MySQL compatibility mode, Hibernate `ddl-auto=update`, Flyway disabled, and H2 Console enabled at `/h2-console`
 - `test`: randomized in-memory H2 database, Hibernate `ddl-auto=create-drop`, Flyway disabled, and H2 Console disabled; server tests activate it from `src/test/resources/application.properties`
 - `mysql`: uses Connector/J, requires `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, and `CONFIG_CENTER_DB_PASSWORD`, applies Flyway migrations before Hibernate `ddl-auto=validate`, and disables H2 Console; missing variables fail before data-source creation and values are never logged by the validator
-- `.env` is ignored. `.env.example` contains placeholders only and documents the future Compose/application variable names.
+- `.env` is ignored. `.env.example` contains placeholders only for the Compose and manually managed MySQL paths.
 
 MySQL schema baseline:
 
@@ -361,6 +366,8 @@ MySQL schema baseline:
 - Primary keys use MySQL identity columns. Current-row and namespace uniqueness plus history lookup indexes mirror the JPA annotations.
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
 - MySQL 8.0.46 was verified from an empty schema through migration, JPA validation, API writes/history/rollback, and a no-op second startup using a dedicated non-root application account.
+- The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and host port 8080 for the server. MySQL 8.4.10 was verified through empty initialization, API write, retained-volume restart, and deleted-volume rebuild.
+- The server image is built from the repository root with Maven Wrapper on Maven 3.9.16/JDK 17, then copies only the executable server JAR into a Java 17 JRE image and runs it as a non-root user.
 
 Client defaults:
 
@@ -375,7 +382,7 @@ Client defaults:
 
 The stabilization phases are complete. The remaining limits are explicit product boundaries, not claims of implemented functionality:
 
-- Persistent MySQL startup is verified but still requires a manually managed database and environment variables; Docker image/Compose startup and automated MySQL CI remain Phase 9C/9D work.
+- Persistent MySQL startup is available through Docker Compose; automated MySQL integration verification and CI remain Phase 9D work.
 - The local API Key model is plaintext configuration for learning use and has no accounts, roles, JWT, or tenant model.
 - Rate-limit buckets and long-poll waiters are process-local and do not coordinate across server instances.
 - The client is a CLI demonstration rather than a published SDK; its package remains `com.example.democlient`.

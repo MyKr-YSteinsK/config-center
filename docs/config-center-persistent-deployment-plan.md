@@ -332,7 +332,7 @@ V1 migration 必须准确创建：
 
 ---
 
-# Phase 9C｜Dockerfile 与 Docker Compose `[ ]`
+# Phase 9C｜Dockerfile 与 Docker Compose `[x]`
 
 ## Goal
 
@@ -429,6 +429,13 @@ docker compose logs --no-color config-center-server
 - 密码不进入 Git；
 - 数据 volume 行为明确；
 - 镜像仅包含运行所需内容。
+
+## Completion evidence
+
+- 2026-07-22 完成：新增 Java 17 多阶段 server 镜像、双服务 `compose.yml`、构建上下文过滤与 MySQL named volume。
+- MySQL 8.4.10 与 server healthcheck 均通过；Flyway 从空库应用 V1，Actuator、Swagger、ping 与授权配置写入通过。
+- `docker compose down` 后数据保留；`docker compose down -v` 后旧数据消失且 Flyway 从空库重新应用 V1。
+- 无缓存镜像构建、全量 Maven 验证与 `git diff --check` 的命令和结果记录于 `docs/patch-log.md`。
 
 ## Codex configuration
 
