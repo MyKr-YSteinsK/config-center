@@ -13,6 +13,8 @@ import com.example.configcenter.repository.ConfigItemRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -150,7 +152,18 @@ public class ConfigService {
 
     @Transactional(readOnly = true)
     public List<ConfigHistoryDto> history(String app, String env, String key) {
-        return historyRepo.findAllByAppAndEnvAndConfigKeyOrderByVersionDesc(app, env, key)
+        return history(app, env, key, 50, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ConfigHistoryDto> history(
+            String app, String env, String key, int limit, Long beforeVersion) {
+        Pageable pageable = PageRequest.of(0, limit);
+        List<ConfigItemHistory> history = beforeVersion == null
+                ? historyRepo.findAllByAppAndEnvAndConfigKeyOrderByVersionDesc(app, env, key, pageable)
+                : historyRepo.findAllByAppAndEnvAndConfigKeyAndVersionLessThanOrderByVersionDesc(
+                        app, env, key, beforeVersion, pageable);
+        return history
                 .stream()
                 .map(h -> new ConfigHistoryDto(
                         h.getApp(), h.getEnv(), h.getConfigKey(), h.getConfigValue(), h.getDescription(),

@@ -117,6 +117,30 @@ class MysqlPersistenceIT {
     }
 
     @Test
+    void historyQueriesAreBoundedAndUseExclusiveVersionCursors() {
+        for (long version = 1; version <= 55; version++) {
+            insertConfigHistory("config-paged", version);
+            insertFeatureHistory("feature-paged", version);
+        }
+
+        var configFirstPage = configService.history("history-app", "dev", "config-paged", 50, null);
+        var configNextPage = configService.history("history-app", "dev", "config-paged", 50, 6L);
+        assertEquals(50, configFirstPage.size());
+        assertEquals(55, configFirstPage.get(0).getVersion());
+        assertEquals(6, configFirstPage.get(49).getVersion());
+        assertEquals(5, configNextPage.size());
+        assertEquals(5, configNextPage.get(0).getVersion());
+
+        var featureFirstPage = featureService.history("history-app", "dev", "feature-paged", 50, null);
+        var featureNextPage = featureService.history("history-app", "dev", "feature-paged", 50, 6L);
+        assertEquals(50, featureFirstPage.size());
+        assertEquals(55, featureFirstPage.get(0).getVersion());
+        assertEquals(6, featureFirstPage.get(49).getVersion());
+        assertEquals(5, featureNextPage.size());
+        assertEquals(5, featureNextPage.get(0).getVersion());
+    }
+
+    @Test
     void configLifecyclePreservesUtf8HistoryAndNamespaceRevisionAcrossConnection() throws SQLException {
         UpsertConfigRequest request = configRequest("中文配置🚀", "第一版：你好，世界🌏", "初始说明😀");
         configService.upsert(request);

@@ -71,8 +71,11 @@ If-None-Match: W/"replace-with-current-etag"
 ### Read one configuration; dotted keys are supported
 GET {{baseUrl}}/api/configs/db.pool.size?app=demo-app&env=dev
 
-### Read configuration history; newest snapshot is first
-GET {{baseUrl}}/api/configs/history?app=demo-app&env=dev&key=db.pool.size
+### Read configuration history; newest snapshot is first, default limit=50 (1..200)
+GET {{baseUrl}}/api/configs/history?app=demo-app&env=dev&key=db.pool.size&limit=20
+
+### Read the next configuration-history page; beforeVersion is exclusive
+GET {{baseUrl}}/api/configs/history?app=demo-app&env=dev&key=db.pool.size&limit=20&beforeVersion=20
 
 ### Roll back configuration version 1 as a new version; API Key is required
 POST {{baseUrl}}/api/configs/rollback
@@ -116,8 +119,11 @@ GET {{baseUrl}}/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&use
 ### Percentage evaluation: stable bucket for the same user and feature
 GET {{baseUrl}}/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u3000
 
-### Read Feature Flag history
-GET {{baseUrl}}/api/features/history?app=demo-app&env=dev&name=new-checkout
+### Read Feature Flag history; newest snapshot is first, default limit=50 (1..200)
+GET {{baseUrl}}/api/features/history?app=demo-app&env=dev&name=new-checkout&limit=20
+
+### Read the next Feature-Flag-history page; beforeVersion is exclusive
+GET {{baseUrl}}/api/features/history?app=demo-app&env=dev&name=new-checkout&limit=20&beforeVersion=20
 
 ### Roll back Feature Flag version 1 as a new version; API Key is required
 POST {{baseUrl}}/api/features/rollback

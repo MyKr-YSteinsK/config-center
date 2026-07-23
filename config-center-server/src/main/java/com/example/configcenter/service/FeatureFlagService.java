@@ -14,6 +14,8 @@ import com.example.configcenter.repository.FeatureFlagRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -102,7 +104,18 @@ public class FeatureFlagService {
 
     @Transactional(readOnly = true)
     public List<FeatureHistoryDto> history(String app, String env, String name) {
-        return historyRepo.findAllByAppAndEnvAndNameOrderByVersionDesc(app, env, name)
+        return history(app, env, name, 50, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FeatureHistoryDto> history(
+            String app, String env, String name, int limit, Long beforeVersion) {
+        Pageable pageable = PageRequest.of(0, limit);
+        List<FeatureFlagHistory> history = beforeVersion == null
+                ? historyRepo.findAllByAppAndEnvAndNameOrderByVersionDesc(app, env, name, pageable)
+                : historyRepo.findAllByAppAndEnvAndNameAndVersionLessThanOrderByVersionDesc(
+                        app, env, name, beforeVersion, pageable);
+        return history
                 .stream()
                 .map(h -> new FeatureHistoryDto(
                         h.getApp(), h.getEnv(), h.getName(),

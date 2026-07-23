@@ -220,6 +220,10 @@ Entity: `FeatureFlagHistory`
 
 Behavior mirrors configuration history.
 
+### History read contract
+
+`GET /api/configs/history` and `GET /api/features/history` query history rows in descending business-version order through repository-level pagination. They keep the `ApiResponse<List<...>>` envelope and accept `limit` (default `50`, range `1..200`) plus an optional positive, exclusive `beforeVersion` cursor. A caller obtains the next page by passing the smallest `version` from the previous page; an omitted cursor reads only the newest 50 snapshots, not the complete history.
+
 ## 6. Public API map
 
 ### Configuration
@@ -227,7 +231,7 @@ Behavior mirrors configuration history.
 - `POST /api/configs` (`X-API-Key` required)
 - `GET /api/configs`
 - `GET /api/configs/{key}`
-- `GET /api/configs/history`
+- `GET /api/configs/history` (`limit=1..200`, optional exclusive `beforeVersion`)
 - `POST /api/configs/rollback` (`X-API-Key` required)
 - `GET /api/configs/watch`
 
@@ -236,7 +240,7 @@ Behavior mirrors configuration history.
 - `POST /api/features` (`X-API-Key` required)
 - `GET /api/features`
 - `GET /api/features/evaluate` (nonblank `userId`, maximum 200 characters)
-- `GET /api/features/history`
+- `GET /api/features/history` (`limit=1..200`, optional exclusive `beforeVersion`)
 - `POST /api/features/rollback` (`X-API-Key` required)
 
 ### Operations
@@ -373,7 +377,7 @@ MySQL schema baseline:
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
 - MySQL 8.0.46 was verified from an empty schema through migration, JPA validation, API writes/history/rollback, and a no-op second startup using a dedicated non-root application account.
 - The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` only for the container-internal listener; `SERVER_BIND_ADDRESS` remains the distinct host-publication control and must be explicitly changed to expose another host interface. MySQL 8.4.10 was verified through empty initialization, API write, retained-volume restart, and deleted-volume rebuild.
-- The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies Flyway V1/V2 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data.
+- The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies Flyway V1/V2 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback including bounded cursor reads, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data.
 - `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
 - GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.
 - Phase 9E end-to-end acceptance verified the persistent Compose runtime from an empty named volume through configuration/Feature Flag version 1–3 and rollback, server restart, full Compose restart with data retention, then `down -v` empty-volume rebuild. The reset left the local development runtime healthy with Flyway V1/V2 and no prior acceptance data.

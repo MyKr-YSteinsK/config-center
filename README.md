@@ -7,8 +7,8 @@ The repository currently provides a verified local baseline for configuration ve
 ## Verified capabilities
 
 - Configuration CRUD-style upsert and reads by `app + env + key`
-- Append-only configuration history and rollback as a new business version
-- Feature Flag upsert, history, rollback, allowlist, and stable percentage rollout
+- Append-only configuration history with bounded reverse-chronological reads and rollback as a new business version
+- Feature Flag upsert, bounded history reads, rollback, allowlist, and stable percentage rollout
 - `ETag` / `If-None-Match` configuration reads with HTTP 304
 - Long-poll configuration watch based on a persistent `app + env` namespace revision
 - API Key authorization for configuration and Feature Flag writes
@@ -234,16 +234,18 @@ Client query values are percent-encoded before requests. Fresh HTTP 200 response
 | `POST` | `/api/configs` | `X-API-Key` | Create or update a configuration |
 | `GET` | `/api/configs` | none | List configurations; supports `If-None-Match` |
 | `GET` | `/api/configs/{key}` | none | Read one configuration |
-| `GET` | `/api/configs/history` | none | Read configuration history |
+| `GET` | `/api/configs/history` | none | Read bounded configuration history |
 | `POST` | `/api/configs/rollback` | `X-API-Key` | Restore a snapshot as a new version |
 | `GET` | `/api/configs/watch` | none | Long-poll a namespace revision |
 | `POST` | `/api/features` | `X-API-Key` | Create or update a Feature Flag |
 | `GET` | `/api/features` | none | List Feature Flags |
 | `GET` | `/api/features/evaluate` | none | Evaluate one user; `userId` must be nonblank and at most 200 characters |
-| `GET` | `/api/features/history` | none | Read Feature Flag history |
+| `GET` | `/api/features/history` | none | Read bounded Feature Flag history |
 | `POST` | `/api/features/rollback` | `X-API-Key` | Restore a Feature Flag snapshot as a new version |
 
 All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching ETag requests return HTTP 304 without a JSON body. See `examples.http` for ready-to-run requests.
+
+History reads return newest business versions first and keep the existing list response envelope. Both history endpoints default to the newest 50 snapshots; `limit` accepts `1..200`, and an optional positive `beforeVersion` is an exclusive business-version cursor. To read the next page, use the smallest `version` from the current page as `beforeVersion`. Calls that previously omitted pagination now receive at most 50 snapshots rather than the complete history.
 
 Configuration-list data and its weak ETag are generated from one ordered in-memory snapshot. The hash uses an unambiguous length-prefixed encoding of every response item field, so reset business versions cannot hide changed values or descriptions.
 

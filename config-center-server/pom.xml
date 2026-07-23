@@ -88,6 +88,15 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedEnvironmentVariables>
+                        <excludedEnvironmentVariable>CONFIG_CENTER_API_KEY</excludedEnvironmentVariable>
+                    </excludedEnvironmentVariables>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>

@@ -315,7 +315,7 @@ class ConfigControllerIntegrationTest {
     @Test
     void featureReadsAndEvaluation_remainUnauthenticated() throws Exception {
         when(featureFlagService.list("demo-app", "dev")).thenReturn(Collections.emptyList());
-        when(featureFlagService.history("demo-app", "dev", "new-checkout"))
+        when(featureFlagService.history("demo-app", "dev", "new-checkout", 50, null))
                 .thenReturn(Collections.emptyList());
         when(featureFlagService.evaluate("demo-app", "dev", "new-checkout", "u1000"))
                 .thenReturn(new FeatureEvalResult(

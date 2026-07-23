@@ -16,6 +16,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import org.springframework.validation.annotation.Validated;
@@ -88,8 +89,10 @@ public class ConfigController {
     public ApiResponse<List<ConfigHistoryDto>> history(
             @RequestParam @NotBlank @Size(max = 100) String app,
             @RequestParam @NotBlank @Size(max = 50) String env,
-            @RequestParam @NotBlank @Size(max = 200) String key) {
-        return ApiResponse.ok(service.history(app, env, key));
+            @RequestParam @NotBlank @Size(max = 200) String key,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit,
+            @RequestParam(required = false) @Positive Long beforeVersion) {
+        return ApiResponse.ok(service.history(app, env, key, limit, beforeVersion));
     }
 
     @PostMapping("/configs/rollback")

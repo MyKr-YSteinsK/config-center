@@ -12,6 +12,9 @@ import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.FeatureFlagService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -60,8 +63,10 @@ public class FeatureController {
     public ApiResponse<List<FeatureHistoryDto>> history(
             @RequestParam @NotBlank @Size(max = 100) String app,
             @RequestParam @NotBlank @Size(max = 50) String env,
-            @RequestParam @NotBlank @Size(max = 200) String name) {
-        return ApiResponse.ok(service.history(app, env, name));
+            @RequestParam @NotBlank @Size(max = 200) String name,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit,
+            @RequestParam(required = false) @Positive Long beforeVersion) {
+        return ApiResponse.ok(service.history(app, env, name, limit, beforeVersion));
     }
 
     // 这里的回滚思路和配置项一致：不是把旧记录改回来，而是生成一条新的当前版本。
