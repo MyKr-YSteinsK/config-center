@@ -12,7 +12,7 @@ public class DemoRunner implements CommandLineRunner {
 
     private final ConfigClient configClient;
     private final HttpFetcher standardHttp;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper;
 
     @Value("${demo.baseUrl}")
     private String baseUrl;
@@ -39,9 +39,11 @@ public class DemoRunner implements CommandLineRunner {
     private int rounds;
 
     public DemoRunner(ConfigClient configClient,
-                      @Qualifier("standardHttp") HttpFetcher standardHttp) {
+                      @Qualifier("standardHttp") HttpFetcher standardHttp,
+                      ObjectMapper mapper) {
         this.configClient = configClient;
         this.standardHttp = standardHttp;
+        this.mapper = mapper;
     }
 
     @Override
@@ -64,7 +66,7 @@ public class DemoRunner implements CommandLineRunner {
                         baseUrl, app, env, sinceVersion, timeoutSeconds);
                 try {
                     ConfigClient.WatchResult result = configClient.watchOnce(
-                            watchUrl, sinceVersion, configUrl);
+                            watchUrl, configUrl);
                     System.out.println("watch result: changed=" + result.changed()
                             + ", latestVersion=" + result.latestVersion());
                     if (result.changed()) {

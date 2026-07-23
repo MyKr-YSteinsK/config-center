@@ -2,7 +2,6 @@ package com.example.democlient;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -15,16 +14,11 @@ public class ConfigClient {
     private final ConfigCache cache;
     private final ObjectMapper mapper;
 
-    @Autowired
     public ConfigClient(
             @Qualifier("standardHttp") HttpFetcher standardHttp,
             @Qualifier("watchHttp") HttpFetcher watchHttp,
-            ConfigCache cache) {
-        this(standardHttp, watchHttp, cache, new ObjectMapper());
-    }
-
-    ConfigClient(HttpFetcher standardHttp, HttpFetcher watchHttp,
-                 ConfigCache cache, ObjectMapper mapper) {
+            ConfigCache cache,
+            ObjectMapper mapper) {
         this.standardHttp = standardHttp;
         this.watchHttp = watchHttp;
         this.cache = cache;
@@ -76,7 +70,7 @@ public class ConfigClient {
         }
     }
 
-    public WatchResult watchOnce(String watchUrl, long sinceVersion, String configUrl)
+    public WatchResult watchOnce(String watchUrl, String configUrl)
             throws Exception {
         ResponseEntity<String> response = watchHttp.getWithRetry(watchUrl, null);
         JsonNode data = requireSuccessfulData(response.getBody(), "WATCH");

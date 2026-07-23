@@ -49,9 +49,7 @@ public class ConfigController {
     public ApiResponse<ConfigItemDto> upsert(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @Valid @RequestBody UpsertConfigRequest req) {
-        if (!apiKeyService.allow(apiKey, req.getApp(), req.getEnv())) {
-            throw new BizException(ErrorCode.FORBIDDEN, "API Key 无权限，当前 app/env 不允许写入");
-        }
+        authorize(apiKey, req.getApp(), req.getEnv());
         return ApiResponse.ok(service.upsert(req));
     }
 
@@ -99,10 +97,14 @@ public class ConfigController {
     public ApiResponse<ConfigItemDto> rollback(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @Valid @RequestBody RollbackConfigRequest req) {
-        if (!apiKeyService.allow(apiKey, req.getApp(), req.getEnv())) {
+        authorize(apiKey, req.getApp(), req.getEnv());
+        return ApiResponse.ok(service.rollback(req));
+    }
+
+    private void authorize(String apiKey, String app, String env) {
+        if (!apiKeyService.allow(apiKey, app, env)) {
             throw new BizException(ErrorCode.FORBIDDEN, "API Key 无权限，当前 app/env 不允许写入");
         }
-        return ApiResponse.ok(service.rollback(req));
     }
 
     // watch 走长轮询：有更新就立即返回，没更新就先挂住，直到超时或者被通知唤醒。

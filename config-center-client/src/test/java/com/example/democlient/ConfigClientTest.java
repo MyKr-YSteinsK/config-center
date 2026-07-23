@@ -185,7 +185,7 @@ class ConfigClientTest {
                 "{\"code\":0,\"data\":{\"changed\":true,\"latestVersion\":7}}");
 
         ConfigClient.WatchResult result = client(standard, watch, cache)
-                .watchOnce("watch", 6, "configs");
+                .watchOnce("watch", "configs");
 
         assertTrue(result.changed());
         assertEquals(7, result.latestVersion());
@@ -251,7 +251,7 @@ class ConfigClientTest {
 
             HttpRequestFailedException error = assertThrows(HttpRequestFailedException.class,
                     () -> client(unusedStandard(), watch, new InMemoryCache())
-                            .watchOnce("watch", 6, "configs"));
+                            .watchOnce("watch", "configs"));
 
             assertEquals(200, error.getStatusCode());
             assertFalse(error.isCacheFallbackAllowed());
