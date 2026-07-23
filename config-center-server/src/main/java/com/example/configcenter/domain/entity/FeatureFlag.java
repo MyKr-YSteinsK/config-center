@@ -82,7 +82,8 @@ public class FeatureFlag {
 
     public List<String> getAllowlist() { return allowlist; }
     public void setAllowlist(List<String> allowlist) {
-        this.allowlist = (allowlist == null) ? new ArrayList<>() : allowlist;
+        // Do not retain a mutable collection owned by the request or a history snapshot.
+        this.allowlist = (allowlist == null) ? new ArrayList<>() : new ArrayList<>(allowlist);
     }
 
     public Instant getUpdatedAt() { return updatedAt; }

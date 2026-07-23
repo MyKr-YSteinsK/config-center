@@ -32,7 +32,7 @@ public class FeatureHistoryDto {
         this.name = name;
         this.enabled = enabled;
         this.rolloutPercentage = rolloutPercentage;
-        this.allowlist = allowlist;
+        this.allowlist = allowlist == null ? null : List.copyOf(allowlist);
         this.version = version;
         this.action = action;
         this.operator = operator;

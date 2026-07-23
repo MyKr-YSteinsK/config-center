@@ -10,10 +10,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
@@ -85,6 +87,18 @@ class FeatureFlagServiceTest {
         assertEquals(List.of("u1"), restored.getAllowlist());
         assertEquals("ROLLBACK", history.get(0).getAction());
         assertEquals("rollback-to=1, restore stable rule", history.get(0).getReason());
+    }
+
+    @Test
+    void allowlistDoesNotRetainCallerCollectionOrExposeMutableResponse() {
+        List<String> requestAllowlist = new ArrayList<>(List.of("u1"));
+        var created = service.upsert(feature(true, 100, requestAllowlist));
+        requestAllowlist.add("u2");
+
+        assertEquals(List.of("u1"), created.getAllowlist());
+        assertEquals(List.of("u1"), service.list("app", "dev").get(0).getAllowlist());
+        assertEquals(List.of("u1"), service.history("app", "dev", "checkout").get(0).getAllowlist());
+        assertThrows(UnsupportedOperationException.class, () -> created.getAllowlist().add("u3"));
     }
 
     private UpsertFeatureRequest feature(boolean enabled, int rollout, List<String> allowlist) {

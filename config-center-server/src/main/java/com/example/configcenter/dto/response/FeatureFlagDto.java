@@ -24,7 +24,7 @@ public class FeatureFlagDto {
         this.name = name;
         this.enabled = enabled;
         this.rolloutPercentage = rolloutPercentage;
-        this.allowlist = allowlist;
+        this.allowlist = allowlist == null ? null : List.copyOf(allowlist);
         this.updatedAt = updatedAt;
         this.version = version;
     }

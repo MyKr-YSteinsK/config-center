@@ -80,7 +80,7 @@ public class FeatureFlagHistory {
 
     public List<String> getAllowlist() { return allowlist; }
     public void setAllowlist(List<String> allowlist) {
-        this.allowlist = (allowlist == null) ? new ArrayList<>() : allowlist;
+        this.allowlist = (allowlist == null) ? new ArrayList<>() : new ArrayList<>(allowlist);
     }
 
     public long getVersion() { return version; }
