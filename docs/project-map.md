@@ -359,7 +359,7 @@ Server common defaults:
 Persistence profiles:
 
 - `local`: in-memory H2 in MySQL compatibility mode, Hibernate `ddl-auto=update`, Flyway disabled, and H2 Console enabled at `/h2-console`
-- `test`: randomized in-memory H2 database, Hibernate `ddl-auto=create-drop`, Flyway disabled, and H2 Console disabled; server tests activate it from `src/test/resources/application.properties`
+- `test`: randomized in-memory H2 database, Hibernate `ddl-auto=create-drop`, Flyway disabled, and H2 Console disabled; its `application-test.yml` stays in `src/test/resources`, where server tests activate it from `application.properties`
 - `mysql`: uses Connector/J, requires `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, and `CONFIG_CENTER_DB_PASSWORD`, applies Flyway migrations before Hibernate `ddl-auto=validate`, and disables H2 Console; missing variables fail before data-source creation and values are never logged by the validator
 - `.env` is ignored. `.env.example` contains placeholders only for the Compose and manually managed MySQL paths.
 
