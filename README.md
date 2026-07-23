@@ -244,13 +244,13 @@ All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching
 
 Configuration-list data and its weak ETag are generated from one ordered in-memory snapshot. The hash uses an unambiguous length-prefixed encoding of every response item field, so reset business versions cannot hide changed values or descriptions.
 
-Configuration watch requires `sinceVersion >= 0` and `timeoutSeconds` within `1..60`. Each completed long-poll response preserves its own request trace ID in both the `X-Trace-Id` header and JSON body, including timeout and write-triggered notification paths.
+Configuration watch requires `sinceVersion >= 0` and `timeoutSeconds` within `1..60`. Each completed long-poll response preserves its own request trace ID in both the `X-Trace-Id` header and JSON body, including timeout and write-triggered notification paths. Pending watch requests are bounded per server process: the global and per-namespace limits reject excess requests with the standard HTTP 429/code `4290` error envelope instead of allocating another waiter.
 
 Within one server process, concurrent first writes to different keys in the same `app + env` namespace are serialized through a bounded 64-stripe lock, so both writes commit with distinct history rows and a monotonic namespace revision.
 
 Write-request string limits match the persistence model, expected and rollback target versions must be positive, and Feature Flag allowlists accept at most 20 non-blank entries of 32 characters each. Invalid bodies or query types return HTTP 400/code `4001`. Unexpected server failures return only code `5000` and `系统异常`; diagnostic details and the full stack trace remain in server logs under the response trace ID.
 
-The local rate limiter groups requests by source address, HTTP method, and matched route pattern, with an access-order bucket cap to bound memory use. Micrometer exposes the monotonic FunctionCounter as `config_center_rate_limit_blocked`; Prometheus renders the counter sample as `config_center_rate_limit_blocked_total`.
+The local rate limiter groups requests by source address, HTTP method, and matched route pattern, with an access-order bucket cap to bound memory use. Micrometer exposes the monotonic FunctionCounter as `config_center_rate_limit_blocked`; Prometheus renders the counter sample as `config_center_rate_limit_blocked_total`. Watch metrics expose current pending waiters and active namespaces as `config_center_watch_pending` and `config_center_watch_namespaces`, while the monotonic rejection FunctionCounter `config_center_watch_rejected` is rendered by Prometheus as `config_center_watch_rejected_total`.
 
 ## Main configuration
 
@@ -264,6 +264,8 @@ The local rate limiter groups requests by source address, HTTP method, and match
 | `rate-limit.capacity` | `5` | Initial token-bucket capacity |
 | `rate-limit.refill-per-second` | `5` | Token refill rate |
 | `rate-limit.max-buckets` | `256` | Maximum process-local rate-limit buckets; least-recently-used entries are evicted |
+| `config-watch.max-pending-waiters` | `256` | Maximum pending Watch requests in one server process |
+| `config-watch.max-pending-per-namespace` | `64` | Maximum pending Watch requests for one `app/env` namespace |
 | `security.api-keys` | one `demo-app/dev` key | Configuration and Feature Flag write authorization mappings; default key can be replaced with `CONFIG_CENTER_API_KEY` |
 | `demo.http.*` | `800/3000 ms` | Client connect/read timeouts |
 | `demo.watch.*` | `10 s + 2000 ms margin`, 5 rounds | Client long-poll settings |

@@ -18,6 +18,10 @@ rate-limit:
   refill-per-second: 5
   max-buckets: 256
 
+config-watch:
+  max-pending-waiters: 256
+  max-pending-per-namespace: 64
+
 management:
   endpoints:
     web:

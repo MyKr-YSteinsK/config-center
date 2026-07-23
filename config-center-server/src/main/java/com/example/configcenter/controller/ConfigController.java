@@ -104,7 +104,7 @@ public class ConfigController {
 
     // watch 走长轮询：有更新就立即返回，没更新就先挂住，直到超时或者被通知唤醒。
     @GetMapping("/configs/watch")
-    public DeferredResult<ApiResponse<ConfigWatchDto>> watch(
+    public DeferredResult<ResponseEntity<ApiResponse<ConfigWatchDto>>> watch(
             @RequestParam @NotBlank @Size(max = 100) String app,
             @RequestParam @NotBlank @Size(max = 50) String env,
             @RequestParam @PositiveOrZero long sinceVersion,
@@ -115,17 +115,19 @@ public class ConfigController {
 
         if (latest > sinceVersion) {
             // 版本已经变了，就别让客户端白等，直接回。
-            DeferredResult<ApiResponse<ConfigWatchDto>> dr = new DeferredResult<>(0L);
-            dr.setResult(ApiResponse.ok(new ConfigWatchDto(true, latest), traceId));
+            DeferredResult<ResponseEntity<ApiResponse<ConfigWatchDto>>> dr = new DeferredResult<>(0L);
+            dr.setResult(ResponseEntity.ok(ApiResponse.ok(new ConfigWatchDto(true, latest), traceId)));
             return dr;
         }
-        DeferredResult<ApiResponse<ConfigWatchDto>> dr =
+        ConfigWatchNotifier.Registration registration =
                 notifier.register(app, env, Duration.ofSeconds(timeoutSeconds), latest, traceId);
 
-        long latestAfterRegistration = service.latestVersion(app, env);
-        if (latestAfterRegistration > sinceVersion) {
-            dr.setResult(ApiResponse.ok(new ConfigWatchDto(true, latestAfterRegistration), traceId));
+        if (registration.accepted()) {
+            long latestAfterRegistration = service.latestVersion(app, env);
+            if (latestAfterRegistration > sinceVersion) {
+                notifier.completeChanged(registration, latestAfterRegistration);
+            }
         }
-        return dr;
+        return registration.result();
     }
 }

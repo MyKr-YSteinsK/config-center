@@ -343,7 +343,8 @@ Current behavior:
 - The controller rechecks the revision after registering a waiter so a change cannot be lost between the initial read and registration.
 - Waiters are indexed by an immutable `(app, env)` key, so separator characters in either value cannot collide.
 - Each waiter stores its originating request trace ID; timeout and change responses build an independent body whose `traceId` matches that request's `X-Trace-Id` response header.
-- Completion removes the waiter and discards empty namespace entries from the process-local map.
+- Registration atomically enforces both the global `config-watch.max-pending-waiters` capacity and the per-namespace `config-watch.max-pending-per-namespace` capacity. A full limit returns the normal `code/message/data/traceId` error envelope with HTTP 429/code `4290`, without adding a waiter.
+- Timeout, notification, and async completion release capacity idempotently and discard empty namespace entries. Notification callbacks run after the internal state lock is released.
 - `sinceVersion` must be non-negative and `timeoutSeconds` must be within `1..60`; violations return HTTP 400.
 
 ## 8. Runtime configuration baseline
@@ -355,6 +356,8 @@ Server common defaults:
 - Rate limiting enabled with capacity `5`, refill rate `5` tokens per second, and at most `256` process-local buckets
 - Rate-limit capacity and bucket limits must be positive; refill rate must be non-negative
 - Micrometer meter `config_center_rate_limit_blocked` is a FunctionCounter; Prometheus exports it as `config_center_rate_limit_blocked_total`
+- Watch waiting capacity defaults to `256` globally and `64` per `app/env` namespace; both limits must be positive
+- Micrometer exposes current watch waiters and namespaces as `config_center_watch_pending` and `config_center_watch_namespaces`, plus rejected registrations as FunctionCounter `config_center_watch_rejected` (Prometheus sample `config_center_watch_rejected_total`)
 - Actuator exposes health, info, metrics, and Prometheus
 - One local API Key mapping: `${CONFIG_CENTER_API_KEY:kr-dev-key}` -> `demo-app/dev`
 
