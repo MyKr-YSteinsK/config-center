@@ -60,4 +60,18 @@ class ApiKeyPropertiesTest {
         assertEquals("demo-app", properties.getApiKeys().get(0).getApp());
         assertEquals(1, properties.getApiKeys().size());
     }
+
+    @Test
+    void developmentKey_remainsTheDefaultOutsideMysqlProfile() throws Exception {
+        StandardEnvironment environment = new StandardEnvironment();
+        new YamlPropertySourceLoader().load(
+                        "application", new ClassPathResource("application.yml"))
+                .forEach(source -> environment.getPropertySources().addLast(source));
+
+        ApiKeyProperties properties = Binder.get(environment)
+                .bind("security", Bindable.of(ApiKeyProperties.class))
+                .orElseThrow(() -> new IllegalStateException("security properties were not bound"));
+
+        assertEquals("kr-dev-key", properties.getApiKeys().get(0).getKey());
+    }
 }

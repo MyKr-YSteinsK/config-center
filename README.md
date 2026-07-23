@@ -66,6 +66,7 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 ```
 
 Omitting `spring.profiles.active` also selects `local`. Automated server tests activate the isolated `test` profile.
+Direct local and MySQL JAR processes listen on `127.0.0.1` by default through `SERVER_ADDRESS`; change that process-level address only when a different direct-runtime boundary is intended.
 
 For the deterministic request sequence below, disable only the local rate limiter while keeping all application behavior under demonstration:
 
@@ -91,7 +92,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Compose starts only `mysql` and `config-center-server`. MySQL 8.4 stores data in the named volume `config-center_mysql-data` and is not exposed on the host; the server waits for MySQL to become healthy and is then available at `http://127.0.0.1:${SERVER_PORT:-8080}` by default. `SERVER_BIND_ADDRESS` defaults to `127.0.0.1`; set it explicitly in the ignored `.env` only when access from another host interface is intended.
+Compose starts only `mysql` and `config-center-server`. MySQL 8.4 stores data in the named volume `config-center_mysql-data` and is not exposed on the host; the server waits for MySQL to become healthy and is then available at `http://127.0.0.1:${SERVER_PORT:-8080}` by default. Compose sets the server process `SERVER_ADDRESS=0.0.0.0` inside its network namespace, while `SERVER_BIND_ADDRESS` controls the host publication and defaults to `127.0.0.1`; set the latter explicitly in the ignored `.env` only when access from another host interface is intended.
 
 Useful diagnostics:
 
@@ -108,10 +109,11 @@ For a manually managed empty MySQL database, grant a dedicated non-root account 
 $env:CONFIG_CENTER_DB_URL = "jdbc:mysql://localhost:3306/config_center?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
 $env:CONFIG_CENTER_DB_USERNAME = "config_center_app"
 $env:CONFIG_CENTER_DB_PASSWORD = "replace-with-local-password"
+$env:CONFIG_CENTER_API_KEY = "replace-with-local-api-key"
 java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
 ```
 
-Flyway applies the V1 baseline and V2 history-version uniqueness constraints before Hibernate performs `ddl-auto=validate`. MySQL 8.0.46 was verified for the manually managed path and MySQL 8.4.10 for the Compose path.
+Flyway applies the V1 baseline and V2 history-version uniqueness constraints before Hibernate performs `ddl-auto=validate`. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY` and never falls back to the development key. MySQL 8.0.46 was verified for the manually managed path and MySQL 8.4.10 for the Compose path.
 
 Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline; `V2__add_history_version_unique_constraints.sql` makes each history business key and version unique. Add a new `V3__...sql` or later migration for future schema changes rather than editing an applied migration. Confirm the applied/unchanged migration from the server log:
 
@@ -128,6 +130,7 @@ docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml up -d 
 $env:CONFIG_CENTER_DB_URL = "jdbc:mysql://127.0.0.1:33306/config_center_it?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
 $env:CONFIG_CENTER_DB_USERNAME = "replace-with-MYSQL_USER"
 $env:CONFIG_CENTER_DB_PASSWORD = "replace-with-MYSQL_PASSWORD"
+$env:CONFIG_CENTER_API_KEY = "replace-with-MYSQL_API_KEY"
 .\mvnw.cmd -q -B -Pmysql-it verify
 docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml down -v
 ```
@@ -257,6 +260,8 @@ The local rate limiter groups requests by source address, HTTP method, and match
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `server.port` | `8080` | Server HTTP port |
+| `server.address` / `SERVER_ADDRESS` | `127.0.0.1` | Direct JAR process listening address; Compose overrides it to `0.0.0.0` only inside the container |
+| `SERVER_BIND_ADDRESS` (Compose) | `127.0.0.1` | Host address for the published container port; distinct from `SERVER_ADDRESS` |
 | `spring.profiles.default` | `local` | Uses the zero-dependency H2 development profile when no profile is selected |
 | `spring.datasource.url` (`local`) | in-memory H2 | Local persistence; data is lost when the process ends |
 | `CONFIG_CENTER_DB_URL` / `CONFIG_CENTER_DB_USERNAME` / `CONFIG_CENTER_DB_PASSWORD` (`mysql`) | none | Required MySQL connection settings; startup fails when any value is missing |
@@ -266,7 +271,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 | `rate-limit.max-buckets` | `256` | Maximum process-local rate-limit buckets; least-recently-used entries are evicted |
 | `config-watch.max-pending-waiters` | `256` | Maximum pending Watch requests in one server process |
 | `config-watch.max-pending-per-namespace` | `64` | Maximum pending Watch requests for one `app/env` namespace |
-| `security.api-keys` | one `demo-app/dev` key | Configuration and Feature Flag write authorization mappings; default key can be replaced with `CONFIG_CENTER_API_KEY` |
+| `security.api-keys` | one local/test `demo-app/dev` key | Configuration and Feature Flag write authorization mappings; MySQL requires nonblank `CONFIG_CENTER_API_KEY` and does not use the development fallback |
 | `demo.http.*` | `800/3000 ms` | Client connect/read timeouts |
 | `demo.watch.*` | `10 s + 2000 ms margin`, 5 rounds | Client long-poll settings |
 

@@ -284,7 +284,7 @@ request
 
 ### Write authorization scope
 
-Configuration and Feature Flag upsert/rollback endpoints use the same lightweight API Key mapping from key to authorized `app/env`. Missing or unauthorized keys return HTTP 403/code `4031`; list, history, watch, and Feature Flag evaluation remain unauthenticated. API Key entries require non-blank key/app/env values, with app/env lengths matching request boundaries. The default development key can be replaced through `CONFIG_CENTER_API_KEY`.
+Configuration and Feature Flag upsert/rollback endpoints use the same lightweight API Key mapping from key to authorized `app/env`. Missing or unauthorized keys return HTTP 403/code `4031`; list, history, watch, and Feature Flag evaluation remain unauthenticated. API Key entries require non-blank key/app/env values, with app/env lengths matching request boundaries. Local and test use the development fallback unless overridden through `CONFIG_CENTER_API_KEY`; the MySQL profile requires a nonblank explicit `CONFIG_CENTER_API_KEY` and does not inherit that fallback.
 
 ### Feature evaluation
 
@@ -349,6 +349,7 @@ Current behavior:
 Server common defaults:
 
 - Port `8080`
+- Direct local and MySQL JAR processes listen on `127.0.0.1` by default through `SERVER_ADDRESS`
 - Default profile `local` and Open Session in View disabled
 - Rate limiting enabled with capacity `5`, refill rate `5` tokens per second, and at most `256` process-local buckets
 - Rate-limit capacity and bucket limits must be positive; refill rate must be non-negative
@@ -362,7 +363,7 @@ Persistence profiles:
 
 - `local`: in-memory H2 in MySQL compatibility mode, Hibernate `ddl-auto=update`, Flyway disabled, and H2 Console enabled at `/h2-console`
 - `test`: randomized in-memory H2 database, Hibernate `ddl-auto=create-drop`, Flyway disabled, and H2 Console disabled; its `application-test.yml` stays in `src/test/resources`, where server tests activate it from `application.properties`
-- `mysql`: uses Connector/J, requires `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, and `CONFIG_CENTER_DB_PASSWORD`, applies Flyway migrations before Hibernate `ddl-auto=validate`, and disables H2 Console; missing variables fail before data-source creation and values are never logged by the validator
+- `mysql`: uses Connector/J, requires `CONFIG_CENTER_DB_URL`, `CONFIG_CENTER_DB_USERNAME`, `CONFIG_CENTER_DB_PASSWORD`, and a nonblank `CONFIG_CENTER_API_KEY`, applies Flyway migrations before Hibernate `ddl-auto=validate`, and disables H2 Console; missing variables fail before data-source creation and values are never logged by the validator
 - `.env` is ignored. `.env.example` contains placeholders only for the Compose and manually managed MySQL paths.
 
 MySQL schema baseline:
@@ -371,7 +372,7 @@ MySQL schema baseline:
 - Primary keys use MySQL identity columns. Current-row and namespace uniqueness plus history business-key/version uniqueness and three-column history lookup indexes mirror the JPA annotations.
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
 - MySQL 8.0.46 was verified from an empty schema through migration, JPA validation, API writes/history/rollback, and a no-op second startup using a dedicated non-root application account.
-- The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default server binding of `127.0.0.1:8080`. `SERVER_BIND_ADDRESS` must be explicitly changed to expose another host interface. MySQL 8.4.10 was verified through empty initialization, API write, retained-volume restart, and deleted-volume rebuild.
+- The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` only for the container-internal listener; `SERVER_BIND_ADDRESS` remains the distinct host-publication control and must be explicitly changed to expose another host interface. MySQL 8.4.10 was verified through empty initialization, API write, retained-volume restart, and deleted-volume rebuild.
 - The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies Flyway V1/V2 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data.
 - `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
 - GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.

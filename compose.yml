@@ -31,6 +31,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: mysql
+      SERVER_ADDRESS: 0.0.0.0
       CONFIG_CENTER_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-config_center}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       CONFIG_CENTER_DB_USERNAME: ${MYSQL_USER:-config_center_app}
       CONFIG_CENTER_DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}

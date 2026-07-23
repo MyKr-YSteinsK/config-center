@@ -15,3 +15,9 @@ spring:
   h2:
     console:
       enabled: false
+
+security:
+  api-keys:
+    - key: ${CONFIG_CENTER_API_KEY}
+      app: demo-app
+      env: dev

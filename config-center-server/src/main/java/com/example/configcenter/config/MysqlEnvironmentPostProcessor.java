@@ -16,7 +16,8 @@ public class MysqlEnvironmentPostProcessor implements EnvironmentPostProcessor, 
     private static final List<String> REQUIRED_VARIABLES = List.of(
             "CONFIG_CENTER_DB_URL",
             "CONFIG_CENTER_DB_USERNAME",
-            "CONFIG_CENTER_DB_PASSWORD"
+            "CONFIG_CENTER_DB_PASSWORD",
+            "CONFIG_CENTER_API_KEY"
     );
 
     @Override

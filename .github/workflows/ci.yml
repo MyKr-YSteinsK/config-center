@@ -47,6 +47,7 @@ jobs:
       CONFIG_CENTER_DB_URL: jdbc:mysql://127.0.0.1:3306/config_center_it?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       CONFIG_CENTER_DB_USERNAME: config_center_it
       CONFIG_CENTER_DB_PASSWORD: mysql-it-${{ github.run_id }}-${{ github.run_attempt }}
+      CONFIG_CENTER_API_KEY: mysql-it-${{ github.run_id }}-${{ github.run_attempt }}
 
     services:
       mysql:
