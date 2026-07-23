@@ -71,7 +71,10 @@ public class DemoRunner implements CommandLineRunner {
                             + ", latestVersion=" + result.latestVersion());
                     if (result.changed()) {
                         sinceVersion = result.latestVersion();
-                        printFetch("change detected -> refreshed configs", result.refreshed());
+                        ConfigClient.FetchResult refreshed = result.refreshed();
+                        if (refreshed.fromCache()) cacheHit++;
+                        if (refreshed.notModified()) etagHit304++;
+                        printFetch("change detected -> refreshed configs", refreshed);
                     }
                 } catch (Exception e) {
                     System.out.println("WARN: watch failed: " + e.getMessage());

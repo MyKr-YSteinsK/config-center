@@ -13,6 +13,9 @@ public interface ConfigNamespaceRevisionRepository extends JpaRepository<ConfigN
 
     Optional<ConfigNamespaceRevision> findByAppAndEnv(String app, String env);
 
+    /**
+     * Locks an existing namespace row while its revision advances; first-row creation is guarded upstream.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from ConfigNamespaceRevision r where r.app = :app and r.env = :env")
     Optional<ConfigNamespaceRevision> findForUpdate(@Param("app") String app, @Param("env") String env);

@@ -9,6 +9,9 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 
+/**
+ * Persistent Watch cursor for one app/env namespace; it is distinct from a per-key business version.
+ */
 @Entity
 @Table(
         name = "config_namespace_revision",
