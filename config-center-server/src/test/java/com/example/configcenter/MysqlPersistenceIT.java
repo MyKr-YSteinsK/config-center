@@ -85,13 +85,35 @@ class MysqlPersistenceIT {
 
     @Test
     void flywayMigrationIsAppliedAndRepeatable() {
-        Integer applied = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM flyway_schema_history WHERE installed_rank = 1 AND success = 1",
-                Integer.class);
+        List<String> appliedVersions = jdbcTemplate.queryForList(
+                "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank",
+                String.class);
 
-        assertEquals(1, applied);
+        assertEquals(List.of("1", "2"), appliedVersions);
         assertEquals(0, flyway.migrate().migrationsExecuted);
+        assertIndexExists("uk_cfg_hist_app_env_key_ver", 0);
+        assertIndexExists("uk_ff_hist_app_env_name_ver", 0);
+        assertIndexDoesNotExist("idx_cfg_hist_app_env_key_ver");
+        assertIndexDoesNotExist("idx_ff_hist_app_env_name_ver");
         assertEquals(0, configRepository.count());
+    }
+
+    @Test
+    void historyVersionsAreUniquePerBusinessKey() {
+        insertConfigHistory("config-key", 1);
+        assertThrows(DuplicateKeyException.class, () -> insertConfigHistory("config-key", 1));
+        insertConfigHistory("config-key", 2);
+        insertConfigHistory("other-config-key", 1);
+
+        insertFeatureHistory("feature-one", 1);
+        assertThrows(DuplicateKeyException.class, () -> insertFeatureHistory("feature-one", 1));
+        insertFeatureHistory("feature-one", 2);
+        insertFeatureHistory("feature-two", 1);
+
+        assertEquals(3, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM config_item_history", Integer.class));
+        assertEquals(3, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM feature_flag_history", Integer.class));
     }
 
     @Test
@@ -186,6 +208,46 @@ class MysqlPersistenceIT {
         staleWriter.setDescription("writer-two");
         assertThrows(OptimisticLockingFailureException.class,
                 () -> configRepository.saveAndFlush(staleWriter));
+    }
+
+    private void assertIndexExists(String indexName, int nonUnique) {
+        Integer matchingIndexes = jdbcTemplate.queryForObject("""
+                SELECT COUNT(DISTINCT index_name)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE() AND index_name = ? AND non_unique = ?
+                """, Integer.class, indexName, nonUnique);
+
+        assertEquals(1, matchingIndexes);
+    }
+
+    private void assertIndexDoesNotExist(String indexName) {
+        Integer matchingIndexes = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE() AND index_name = ?
+                """, Integer.class, indexName);
+
+        assertEquals(0, matchingIndexes);
+    }
+
+    private void insertConfigHistory(String key, long version) {
+        jdbcTemplate.update("""
+                INSERT INTO config_item_history
+                    (app, env, config_key, config_value, description, version,
+                     action, operator, reason, created_at)
+                VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, CURRENT_TIMESTAMP(6))
+                """, "history-app", "dev", key, "value", version,
+                "UPSERT", "mysql-it", "history uniqueness test");
+    }
+
+    private void insertFeatureHistory(String name, long version) {
+        jdbcTemplate.update("""
+                INSERT INTO feature_flag_history
+                    (app, env, name, enabled, rollout_percentage, allowlist_json, version,
+                     action, operator, reason, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(6))
+                """, "history-app", "dev", name, true, 50, "[]", version,
+                "UPSERT", "mysql-it", "history uniqueness test");
     }
 
     private UpsertConfigRequest configRequest(String key, String value, String description) {

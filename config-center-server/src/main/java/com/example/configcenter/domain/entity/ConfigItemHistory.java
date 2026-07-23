@@ -10,9 +10,12 @@ import java.time.Instant;
  */
 @Entity
 @Table(name = "config_item_history",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_cfg_hist_app_env_key_ver",
+                        columnNames = {"app", "env", "config_key", "version"})
+        },
         indexes = {
-                @Index(name = "idx_cfg_hist_app_env_key", columnList = "app, env, config_key"),
-                @Index(name = "idx_cfg_hist_app_env_key_ver", columnList = "app, env, config_key, version")
+                @Index(name = "idx_cfg_hist_app_env_key", columnList = "app, env, config_key")
         }
 )
 public class ConfigItemHistory {

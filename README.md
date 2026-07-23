@@ -111,9 +111,9 @@ $env:CONFIG_CENTER_DB_PASSWORD = "replace-with-local-password"
 java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
 ```
 
-Flyway creates or validates schema version 1 before Hibernate performs `ddl-auto=validate`. MySQL 8.0.46 was verified for the manually managed path and MySQL 8.4.10 for the Compose path.
+Flyway applies the V1 baseline and V2 history-version uniqueness constraints before Hibernate performs `ddl-auto=validate`. MySQL 8.0.46 was verified for the manually managed path and MySQL 8.4.10 for the Compose path.
 
-Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline: add a new `V2__...sql` migration for later schema changes rather than editing an applied migration. Confirm the applied/unchanged migration from the server log:
+Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline; `V2__add_history_version_unique_constraints.sql` makes each history business key and version unique. Add a new `V3__...sql` or later migration for future schema changes rather than editing an applied migration. Confirm the applied/unchanged migration from the server log:
 
 ```powershell
 docker compose logs --no-color config-center-server | Select-String "Migrating schema|up to date"

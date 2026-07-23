@@ -13,9 +13,12 @@ import java.util.List;
  */
 @Entity
 @Table(name = "feature_flag_history",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_ff_hist_app_env_name_ver",
+                        columnNames = {"app", "env", "name", "version"})
+        },
         indexes = {
-                @Index(name = "idx_ff_hist_app_env_name", columnList = "app, env, name"),
-                @Index(name = "idx_ff_hist_app_env_name_ver", columnList = "app, env, name, version")
+                @Index(name = "idx_ff_hist_app_env_name", columnList = "app, env, name")
         }
 )
 public class FeatureFlagHistory {
