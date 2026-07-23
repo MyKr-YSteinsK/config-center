@@ -1,6 +1,6 @@
 # Project Map
 
-Last reviewed against repository state: 2026-07-22
+Last reviewed against repository state: 2026-07-23
 Default branch at review time: `master`
 
 ## 1. Project boundary
@@ -41,9 +41,6 @@ config-center/
 │       └── ci.yml
 ├── docs/
 │   ├── project-map.md
-│   ├── dev-plan.md
-│   ├── patch-log.md
-│   └── config-center-persistent-deployment-plan.md
 ├── config-center-server/
 │   ├── Dockerfile
 │   ├── pom.xml
@@ -378,7 +375,7 @@ MySQL schema baseline:
 - The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies Flyway V1/V2 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data.
 - `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
 - GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.
-- Phase 9E end-to-end acceptance verified the persistent Compose runtime from an empty named volume through configuration/Feature Flag version 1–3 and rollback, server restart, full Compose restart with data retention, then `down -v` empty-volume rebuild. The reset left the local development runtime healthy with Flyway V1 and no prior acceptance data.
+- Phase 9E end-to-end acceptance verified the persistent Compose runtime from an empty named volume through configuration/Feature Flag version 1–3 and rollback, server restart, full Compose restart with data retention, then `down -v` empty-volume rebuild. The reset left the local development runtime healthy with Flyway V1/V2 and no prior acceptance data.
 - The server image is built from the repository root with Maven Wrapper on Maven 3.9.16/JDK 17, then copies only the executable server JAR into a Java 17 JRE image and runs it as a non-root user.
 
 Client defaults:
@@ -404,10 +401,10 @@ The stabilization phases are complete. The remaining limits are explicit product
 
 ## 10. Documentation ownership
 
-- `project-map.md`: current architecture and verified behavior
-- `dev-plan.md`: intended changes, phases, status, and acceptance criteria
-- `patch-log.md`: append-only history of completed patches
-- `README.md`: verified public overview, build/run guide, and local demonstration
 - `AGENTS.md`: mandatory Codex working rules
+- `README.md`: verified public overview, build/run guide, and local demonstration
+- `docs/project-map.md`: current architecture and verified behavior
+- `examples.http`: request examples aligned with current authorization and response behavior
+- `config-center-server/src/main/resources/db/migration/`: append-only Flyway schema history
 
 When code changes any architecture or behavior described here, update this file in the same patch.

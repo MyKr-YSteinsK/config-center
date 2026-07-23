@@ -139,8 +139,17 @@ GET {{baseUrl}}/actuator/health
 ### Metrics catalog
 GET {{baseUrl}}/actuator/metrics
 
-### Rate-limit blocked-request gauge
-GET {{baseUrl}}/actuator/metrics/config_center_rate_limit_blocked_total
+### Actuator uses base meter names; Prometheus adds `_total` to counter samples
+GET {{baseUrl}}/actuator/metrics/config_center_rate_limit_blocked
+
+### Current pending configuration-watch waiters
+GET {{baseUrl}}/actuator/metrics/config_center_watch_pending
+
+### Current namespaces with pending configuration-watch waiters
+GET {{baseUrl}}/actuator/metrics/config_center_watch_namespaces
+
+### Configuration-watch registrations rejected for capacity
+GET {{baseUrl}}/actuator/metrics/config_center_watch_rejected
 
 ### Prometheus exposition
 GET {{baseUrl}}/actuator/prometheus

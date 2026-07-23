@@ -11,7 +11,7 @@ The repository currently provides a verified local baseline for configuration ve
 - Feature Flag upsert, history, rollback, allowlist, and stable percentage rollout
 - `ETag` / `If-None-Match` configuration reads with HTTP 304
 - Long-poll configuration watch based on a persistent `app + env` namespace revision
-- API Key authorization for configuration upsert and rollback
+- API Key authorization for configuration and Feature Flag writes
 - Optimistic-lock conflict handling and consistent HTTP error statuses
 - Java CLI client with retry, circuit breaking, ETag cache, transient-failure fallback, and watch refresh
 - Trace IDs, rate limiting, Actuator, Micrometer/Prometheus, JaCoCo, and CI verification
@@ -100,7 +100,7 @@ docker compose logs --no-color config-center-server
 docker compose logs --no-color mysql
 ```
 
-`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume; the next startup creates an empty database and reapplies `config-center-server/src/main/resources/db/migration/V1__init_schema.sql`.
+`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume; the next startup creates an empty database and reapplies all Flyway migrations, currently `V1__init_schema.sql` and `V2__add_history_version_unique_constraints.sql`.
 
 For a manually managed empty MySQL database, grant a dedicated non-root account access to the schema, set the required values, and select `mysql`:
 
@@ -282,7 +282,8 @@ The local rate limiter groups requests by source address, HTTP method, and match
 
 ## Project documentation
 
+- `AGENTS.md`: mandatory working rules
+- `README.md`: verified public overview and local usage
 - `docs/project-map.md`: current architecture and behavior
-- `docs/dev-plan.md`: completed stabilization phases and deferred ideas
-- `docs/patch-log.md`: append-only verification history
 - `examples.http`: request examples aligned with current authorization and response behavior
+- `config-center-server/src/main/resources/db/migration/`: append-only Flyway schema history
