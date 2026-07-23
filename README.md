@@ -91,7 +91,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Compose starts only `mysql` and `config-center-server`. MySQL 8.4 stores data in the named volume `config-center_mysql-data` and is not exposed on the host; the server waits for MySQL to become healthy and is then available on `${SERVER_PORT:-8080}`.
+Compose starts only `mysql` and `config-center-server`. MySQL 8.4 stores data in the named volume `config-center_mysql-data` and is not exposed on the host; the server waits for MySQL to become healthy and is then available at `http://127.0.0.1:${SERVER_PORT:-8080}` by default. `SERVER_BIND_ADDRESS` defaults to `127.0.0.1`; set it explicitly in the ignored `.env` only when access from another host interface is intended.
 
 Useful diagnostics:
 
@@ -119,7 +119,7 @@ Migration files are under `config-center-server/src/main/resources/db/migration/
 docker compose logs --no-color config-center-server | Select-String "Migrating schema|up to date"
 ```
 
-If host port `8080` is occupied, set `SERVER_PORT=8081` (or another free port) in `.env` before `docker compose up`. MySQL deliberately has no host-port mapping in the persistent Compose path, so it does not contend for local port `3306`.
+If host port `8080` is occupied, set `SERVER_PORT=8081` (or another free port) in `.env` before `docker compose up`. The default `SERVER_BIND_ADDRESS=127.0.0.1` keeps the server local-only; change it explicitly only when another host interface is required. MySQL deliberately has no host-port mapping in the persistent Compose path, so it does not contend for local port `3306`.
 
 To run the isolated MySQL regression locally, start only the dedicated test database, export credentials matching `MYSQL_USER` and `MYSQL_PASSWORD` in the ignored `.env`, then activate the Maven profile:
 
