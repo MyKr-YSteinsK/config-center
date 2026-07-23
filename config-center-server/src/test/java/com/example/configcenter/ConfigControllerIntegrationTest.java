@@ -346,6 +346,38 @@ class ConfigControllerIntegrationTest {
         verifyNoInteractions(apiKeyService);
     }
 
+    @Test
+    void evaluationUserIdAtMaximumLength_isAccepted() throws Exception {
+        String userId = "u".repeat(200);
+        when(featureFlagService.evaluate("demo-app", "dev", "new-checkout", userId))
+                .thenReturn(new FeatureEvalResult(
+                        "new-checkout", userId, true, -1, "allowlist 命中"));
+
+        mockMvc.perform(get("/api/features/evaluate")
+                        .param("app", "demo-app")
+                        .param("env", "dev")
+                        .param("name", "new-checkout")
+                        .param("userId", userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.userId").value(userId));
+    }
+
+    @Test
+    void blankOrOversizedEvaluationUserId_returns400BeforeService() throws Exception {
+        for (String userId : new String[]{" ", "u".repeat(201)}) {
+            mockMvc.perform(get("/api/features/evaluate")
+                            .param("app", "demo-app")
+                            .param("env", "dev")
+                            .param("name", "new-checkout")
+                            .param("userId", userId))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(4001));
+        }
+
+        verifyNoInteractions(featureFlagService);
+    }
+
     private void allowConfigWrites() {
         when(apiKeyService.allow("kr-dev-key", "demo-app", "dev")).thenReturn(true);
     }

@@ -236,7 +236,7 @@ Client query values are percent-encoded before requests. Fresh HTTP 200 response
 | `GET` | `/api/configs/watch` | none | Long-poll a namespace revision |
 | `POST` | `/api/features` | `X-API-Key` | Create or update a Feature Flag |
 | `GET` | `/api/features` | none | List Feature Flags |
-| `GET` | `/api/features/evaluate` | none | Evaluate one user |
+| `GET` | `/api/features/evaluate` | none | Evaluate one user; `userId` must be nonblank and at most 200 characters |
 | `GET` | `/api/features/history` | none | Read Feature Flag history |
 | `POST` | `/api/features/rollback` | `X-API-Key` | Restore a Feature Flag snapshot as a new version |
 

@@ -52,7 +52,7 @@ public class FeatureController {
             @RequestParam @NotBlank @Size(max = 100) String app,
             @RequestParam @NotBlank @Size(max = 50) String env,
             @RequestParam @NotBlank @Size(max = 200) String name,
-            @RequestParam @NotBlank String userId) {
+            @RequestParam @NotBlank @Size(max = 200) String userId) {
         return ApiResponse.ok(service.evaluate(app, env, name, userId));
     }
 

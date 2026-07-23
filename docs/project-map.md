@@ -236,7 +236,7 @@ Behavior mirrors configuration history.
 
 - `POST /api/features` (`X-API-Key` required)
 - `GET /api/features`
-- `GET /api/features/evaluate`
+- `GET /api/features/evaluate` (nonblank `userId`, maximum 200 characters)
 - `GET /api/features/history`
 - `POST /api/features/rollback` (`X-API-Key` required)
 
