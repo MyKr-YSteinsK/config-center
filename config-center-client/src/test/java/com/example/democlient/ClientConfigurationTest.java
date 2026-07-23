@@ -21,6 +21,7 @@ import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -68,6 +69,56 @@ class ClientConfigurationTest {
 
         assertEquals("body", cache.get("configs").body);
         assertTrue(Files.exists(canonical));
+    }
+
+    @Test
+    void canonicalCacheWinsOverLegacyCacheWhenBothExist() throws Exception {
+        Path canonical = tempDir.resolve(".config-center-client-cache.json");
+        Path legacy = tempDir.resolve(".config-center-demo-client-cache.json");
+        ObjectMapper mapper = new ObjectMapper();
+        Files.write(canonical, mapper.writeValueAsBytes(Map.of(
+                "configs", new HttpDiskCache.Entry("canonical-etag", "canonical-body")
+        )));
+        Files.write(legacy, mapper.writeValueAsBytes(Map.of(
+                "configs", new HttpDiskCache.Entry("legacy-etag", "legacy-body")
+        )));
+
+        HttpDiskCache cache = new HttpDiskCache(canonical, legacy);
+
+        assertEquals("canonical-body", cache.get("configs").body);
+        assertEquals("canonical-etag", cache.get("configs").etag);
+    }
+
+    @Test
+    void malformedCanonicalCacheDoesNotLoadLegacyCache() throws Exception {
+        Path canonical = tempDir.resolve(".config-center-client-cache.json");
+        Path legacy = tempDir.resolve(".config-center-demo-client-cache.json");
+        ObjectMapper mapper = new ObjectMapper();
+        Files.writeString(canonical, "not-json");
+        Files.write(legacy, mapper.writeValueAsBytes(Map.of(
+                "configs", new HttpDiskCache.Entry("legacy-etag", "legacy-body")
+        )));
+
+        HttpDiskCache cache = new HttpDiskCache(canonical, legacy);
+
+        assertNull(cache.get("configs"));
+        assertEquals("not-json", Files.readString(canonical));
+    }
+
+    @Test
+    void emptyCanonicalCacheDoesNotLoadLegacyCache() throws Exception {
+        Path canonical = tempDir.resolve(".config-center-client-cache.json");
+        Path legacy = tempDir.resolve(".config-center-demo-client-cache.json");
+        ObjectMapper mapper = new ObjectMapper();
+        Files.write(canonical, new byte[0]);
+        Files.write(legacy, mapper.writeValueAsBytes(Map.of(
+                "configs", new HttpDiskCache.Entry("legacy-etag", "legacy-body")
+        )));
+
+        HttpDiskCache cache = new HttpDiskCache(canonical, legacy);
+
+        assertNull(cache.get("configs"));
+        assertEquals(0, Files.size(canonical));
     }
 
     @Test

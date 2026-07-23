@@ -20,10 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfigClientTest {
 
+    private static final String VALID_CONFIG_BODY = "{\"code\":0,\"data\":[]}";
+
     @Test
     void etag304_usesExistingCache() throws Exception {
         InMemoryCache cache = new InMemoryCache();
-        cache.put("configs", "W/\"etag\"", "cached-body");
+        cache.put("configs", "W/\"etag\"", VALID_CONFIG_BODY);
         AtomicReference<String> receivedEtag = new AtomicReference<>();
         HttpFetcher standard = (url, etag) -> {
             receivedEtag.set(etag);
@@ -33,7 +35,7 @@ class ConfigClientTest {
         ConfigClient.FetchResult result = client(standard, unusedWatch(), cache).fetchConfigs("configs");
 
         assertEquals("W/\"etag\"", receivedEtag.get());
-        assertEquals("cached-body", result.body());
+        assertEquals(VALID_CONFIG_BODY, result.body());
         assertTrue(result.fromCache());
         assertTrue(result.notModified());
     }
@@ -49,22 +51,92 @@ class ConfigClientTest {
     @Test
     void exhaustedTransientFailure_fallsBackToCache() throws Exception {
         InMemoryCache cache = new InMemoryCache();
-        cache.put("configs", "etag", "cached-body");
+        cache.put("configs", "etag", VALID_CONFIG_BODY);
         HttpFetcher standard = (url, etag) -> {
             throw new HttpRequestFailedException("HTTP_500", 500, true);
         };
 
         ConfigClient.FetchResult result = client(standard, unusedWatch(), cache).fetchConfigs("configs");
 
-        assertEquals("cached-body", result.body());
+        assertEquals(VALID_CONFIG_BODY, result.body());
         assertTrue(result.fromCache());
         assertFalse(result.notModified());
     }
 
     @Test
+    void malformedCacheIsNotUsedAsTransientFailureFallback() {
+        InMemoryCache cache = new InMemoryCache();
+        cache.put("configs", "etag", "not-json");
+        AtomicReference<String> receivedEtag = new AtomicReference<>();
+        HttpFetcher standard = (url, etag) -> {
+            receivedEtag.set(etag);
+            throw new HttpRequestFailedException("HTTP_500", 500, true);
+        };
+
+        assertThrows(HttpRequestFailedException.class,
+                () -> client(standard, unusedWatch(), cache).fetchConfigs("configs"));
+        assertEquals(null, receivedEtag.get());
+    }
+
+    @Test
+    void malformedCacheDoesNotSendEtagAndCanBeReplacedByFreshResponse() throws Exception {
+        InMemoryCache cache = new InMemoryCache();
+        cache.put("configs", "W/\"stale\"", "not-json");
+        AtomicReference<String> receivedEtag = new AtomicReference<>();
+        HttpFetcher standard = (url, etag) -> {
+            receivedEtag.set(etag);
+            return ResponseEntity.ok(VALID_CONFIG_BODY);
+        };
+
+        ConfigClient.FetchResult result = client(standard, unusedWatch(), cache).fetchConfigs("configs");
+
+        assertEquals(null, receivedEtag.get());
+        assertFalse(result.fromCache());
+        assertEquals(VALID_CONFIG_BODY, cache.get("configs").body);
+    }
+
+    @Test
+    void malformedCacheWith304FailsAsWithoutValidCache() {
+        InMemoryCache cache = new InMemoryCache();
+        cache.put("configs", "W/\"stale\"", "{\"code\":0,\"data\":{}}");
+        AtomicReference<String> receivedEtag = new AtomicReference<>();
+        HttpFetcher standard = (url, etag) -> {
+            receivedEtag.set(etag);
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).build();
+        };
+
+        HttpRequestFailedException error = assertThrows(HttpRequestFailedException.class,
+                () -> client(standard, unusedWatch(), cache).fetchConfigs("configs"));
+
+        assertEquals(null, receivedEtag.get());
+        assertEquals("HTTP_304_WITHOUT_VALID_CACHE", error.getMessage());
+        assertFalse(error.isCacheFallbackAllowed());
+    }
+
+    @Test
+    void validCacheWithMissingOrBlankEtagUsesUnconditionalRequestAndFallback() throws Exception {
+        for (String etag : new String[]{null, "   "}) {
+            InMemoryCache cache = new InMemoryCache();
+            cache.put("configs", etag, VALID_CONFIG_BODY);
+            AtomicReference<String> receivedEtag = new AtomicReference<>();
+            HttpFetcher standard = (url, requestEtag) -> {
+                receivedEtag.set(requestEtag);
+                throw new HttpRequestFailedException("HTTP_500", 500, true);
+            };
+
+            ConfigClient.FetchResult result = client(standard, unusedWatch(), cache)
+                    .fetchConfigs("configs");
+
+            assertEquals(null, receivedEtag.get());
+            assertEquals(VALID_CONFIG_BODY, result.body());
+            assertTrue(result.fromCache());
+        }
+    }
+
+    @Test
     void nonRetryableError_isNotCachedOrHiddenByFallback() {
         InMemoryCache cache = new InMemoryCache();
-        cache.put("configs", "etag", "old-body");
+        cache.put("configs", "etag", VALID_CONFIG_BODY);
         int writesBefore = cache.putCount;
         HttpFetcher standard = (url, etag) -> {
             throw new HttpRequestFailedException("HTTP_403", 403, false);
@@ -73,13 +145,13 @@ class ConfigClientTest {
         assertThrows(HttpRequestFailedException.class,
                 () -> client(standard, unusedWatch(), cache).fetchConfigs("configs"));
         assertEquals(writesBefore, cache.putCount);
-        assertEquals("old-body", cache.get("configs").body);
+        assertEquals(VALID_CONFIG_BODY, cache.get("configs").body);
     }
 
     @Test
     void repeated429_neverReturnsStaleCacheAsSuccess() {
         InMemoryCache cache = new InMemoryCache();
-        cache.put("configs", "etag", "old-body");
+        cache.put("configs", "etag", VALID_CONFIG_BODY);
         int writesBefore = cache.putCount;
         AtomicInteger requests = new AtomicInteger();
         HttpFetcher standard = (url, etag) -> {
@@ -95,7 +167,7 @@ class ConfigClientTest {
 
         assertEquals(3, requests.get());
         assertEquals(writesBefore, cache.putCount);
-        assertEquals("old-body", cache.get("configs").body);
+        assertEquals(VALID_CONFIG_BODY, cache.get("configs").body);
     }
 
     @Test

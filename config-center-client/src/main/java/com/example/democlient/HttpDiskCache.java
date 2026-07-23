@@ -66,7 +66,8 @@ public class HttpDiskCache implements ConfigCache {
     }
 
     private void load() {
-        if (loadFrom(file)) {
+        if (Files.exists(file)) {
+            loadFrom(file);
             return;
         }
         if (loadFrom(legacyFile)) {

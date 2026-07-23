@@ -32,8 +32,9 @@ public class ConfigClient {
     }
 
     public FetchResult fetchConfigs(String url) throws InterruptedException {
-        HttpDiskCache.Entry cached = cache.get(url);
-        String cachedEtag = cached == null ? null : cached.etag;
+        HttpDiskCache.Entry cached = usableCachedConfig(cache.get(url));
+        String cachedEtag = cached == null || cached.etag == null || cached.etag.isBlank()
+                ? null : cached.etag;
 
         ResponseEntity<String> response;
         try {
@@ -61,6 +62,18 @@ public class ConfigClient {
 
         cache.put(url, response.getHeaders().getETag(), body);
         return new FetchResult(body, false, false);
+    }
+
+    private HttpDiskCache.Entry usableCachedConfig(HttpDiskCache.Entry cached) {
+        if (cached == null || cached.body == null) {
+            return null;
+        }
+
+        try {
+            return requireSuccessfulData(cached.body, "CONFIG").isArray() ? cached : null;
+        } catch (HttpRequestFailedException ignored) {
+            return null;
+        }
     }
 
     public WatchResult watchOnce(String watchUrl, long sinceVersion, String configUrl)

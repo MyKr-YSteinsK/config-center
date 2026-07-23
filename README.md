@@ -217,11 +217,11 @@ After seeding the configuration and Feature Flag above, run the client once with
 .\mvnw.cmd -q -B -pl config-center-client spring-boot:run '-Dspring-boot.run.arguments=--demo.watch.enabled=false'
 ```
 
-Remove the argument to use the configured five long-poll rounds. The client cache is stored at `${user.home}/.config-center-client-cache.json`; an existing legacy `.config-center-demo-client-cache.json` is migrated without being deleted.
+Remove the argument to use the configured five long-poll rounds. The client cache is stored at `${user.home}/.config-center-client-cache.json`; an existing legacy `.config-center-demo-client-cache.json` is migrated without being deleted only when the canonical file is absent. A present empty or malformed canonical cache does not revive legacy data.
 
-The client retries 5xx and network failures and may use cached configuration only after those transient attempts are exhausted. HTTP 4xx responses, including 429, neither retry nor open the availability circuit breaker and never return stale cache as success; requests rejected by an already-open breaker also do not fall back.
+The client retries 5xx and network failures and may use a structurally valid cached configuration only after those transient attempts are exhausted. A cache entry is valid only when its body is a configuration response with integral `code: 0` and array `data`; malformed entries neither send an ETag nor satisfy a 304 response or fallback. HTTP 4xx responses, including 429, neither retry nor open the availability circuit breaker and never return stale cache as success; requests rejected by an already-open breaker also do not fall back.
 
-Client query values are percent-encoded before requests. Fresh HTTP 200 responses must contain numeric `code: 0` and non-null `data`; configuration data must be an array, while watch data requires boolean `changed` and a non-negative integral `latestVersion`. Malformed successful responses are protocol errors and are not cached. Cache writes use a completed same-directory temporary file, atomic replacement when supported, and a safe replacement fallback otherwise; the JSON format remains unchanged.
+Client query values are percent-encoded before requests. Fresh HTTP 200 responses must contain numeric `code: 0` and non-null `data`; configuration data must be an array, while watch data requires boolean `changed` and a non-negative integral `latestVersion`. A valid cached body with a missing or blank ETag remains eligible for fallback but sends an unconditional request. Malformed successful responses are protocol errors and are not cached. Cache writes use a completed same-directory temporary file, atomic replacement when supported, and a safe replacement fallback otherwise; the JSON format remains unchanged.
 
 ## Public API
 

@@ -102,10 +102,10 @@ Main package: `com.example.configcenter`
 Responsibilities:
 
 - Fetch configurations over HTTP
-- Reuse ETag and local disk cache
+- Reuse only structurally valid ETag and local disk cache entries
 - Retry 5xx and network failures according to policy
 - Reject 400/403/404 and 429 without retrying
-- Fall back to cached configuration only after exhausted transient failures
+- Fall back to a structurally valid cached configuration only after exhausted transient failures
 - Run a basic availability circuit breaker that counts 5xx and network failures only
 - Use a dedicated watch timeout larger than the server long-poll timeout
 - Refetch and persist configurations after a watch change
@@ -117,7 +117,7 @@ Current package: `com.example.democlient`
 
 The package name is legacy naming. Do not rename it as incidental cleanup; handle it only in a dedicated low-risk cleanup task after behavioral stabilization.
 
-The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file. Writes are serialized within the client instance, written to a same-directory `.tmp` file, and moved over the canonical file atomically when supported; filesystems without atomic move use a completed-temp-file replacement fallback.
+The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file. A present canonical file, including an empty or malformed one, never falls back to legacy data. Before a cache entry may supply an ETag, satisfy a 304 response, or serve transient-failure fallback, its body must be a configuration response with integral `code` equal to `0` and an array `data`; its ETag is used only when nonblank. Writes are serialized within the client instance, written to a same-directory `.tmp` file, and moved over the canonical file atomically when supported; filesystems without atomic move use a completed-temp-file replacement fallback.
 
 ## 4. Server architecture
 
@@ -304,17 +304,18 @@ server loads one ordered configuration snapshot
   -> length-prefix all response fields and hash them into a weak ETag
   -> use the same DTO snapshot for conditional comparison and the 200 body
 
-client reads cached ETag
-  -> GET /api/configs with If-None-Match
-  -> 304: require and use cached body
+client validates cached configuration body before use
+  -> valid, nonblank ETag: GET /api/configs with If-None-Match
+  -> valid body with missing/blank ETag, or invalid cache: unconditional GET
+  -> 304: require and use valid cached body
   -> 200: require numeric code 0 and array data, then persist new ETag and body
   -> 400/403/404/429: fail without retry or cache fallback
-  -> 5xx/network failure: retry, then use cache when available
+  -> 5xx/network failure: retry, then use valid cache when available
 ```
 
 The client circuit breaker is scoped to service availability. HTTP 4xx responses, including 429, prove that the service was reachable and therefore do not open the breaker; they still fail immediately without cache fallback. Only exhausted 5xx or network failures are cache-fallback eligible, and a request rejected by an already-open breaker is not treated as a fresh transient failure. After the open interval, one HALF_OPEN probe is admitted; success closes the breaker and any failure reopens it.
 
-HTTP 200 responses are not trusted solely because of their status. Configuration and Feature Flag evaluation responses require an integral `code` equal to `0` and non-null `data`; configuration data must be an array. Watch data must be an object with a boolean `changed` and a non-negative integral `latestVersion`. Invalid JSON, missing fields, wrong types, or nonzero codes are protocol errors and are not written to cache or treated as cache-fallback-eligible failures.
+HTTP 200 responses are not trusted solely because of their status. Configuration and Feature Flag evaluation responses require an integral `code` equal to `0` and non-null `data`; configuration data must be an array. The same configuration shape is required before persisted cache data is trusted for conditional requests, 304 bodies, or fallback. Watch data must be an object with a boolean `changed` and a non-negative integral `latestVersion`. Invalid JSON, missing fields, wrong types, or nonzero codes are protocol errors and are not written to cache or treated as cache-fallback-eligible failures.
 
 ### Configuration watch
 
