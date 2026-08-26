@@ -2,11 +2,11 @@
 
 `config-center` is a lightweight configuration center and Feature Flag learning project built with Java 17, Spring Boot 3, Spring Data JPA, H2, MySQL, Flyway, and a Maven multi-module layout. H2 remains the zero-dependency local and test database; the explicit `mysql` profile provides persistent storage with a versioned schema.
 
-The repository currently provides a verified local baseline for configuration versioning, rollback, conditional HTTP reads, long polling, Feature Flag evaluation, and a resilient Java demo client. It is intentionally smaller than a production control plane.
+The repository contains a local baseline for configuration versioning, rollback, conditional HTTP reads, long polling, Feature Flag evaluation, and a resilient Java demo client. These are repository capabilities, not a release or production claim; adoption-time execution evidence for this checkout is tracked in `docs/project/CURRENT_STATE.md`. The project is intentionally smaller than a production control plane.
 
-## Verified capabilities
+## Repository capabilities
 
-- Configuration CRUD-style upsert and reads by `app + env + key`
+- Configuration upsert and reads by `app + env + key`
 - Append-only configuration history with bounded reverse-chronological reads and rollback as a new business version
 - Feature Flag upsert, bounded history reads, rollback, allowlist, and stable percentage rollout
 - `ETag` / `If-None-Match` configuration reads with HTTP 304
@@ -57,6 +57,8 @@ The build runs both modules' tests and generates JaCoCo reports under:
 - `config-center-server/target/site/jacoco/index.html`
 - `config-center-client/target/site/jacoco/index.html`
 
+The commands and files below describe the repository's supported local paths. Fresh adoption-time execution evidence for this checkout is recorded separately in `docs/project/CURRENT_STATE.md`; historical reports, CI configuration, and Docker/Compose definitions are not substitutes for a current local run.
+
 ## Quick start: H2
 
 After the build, start the executable server jar:
@@ -101,7 +103,7 @@ docker compose logs --no-color config-center-server
 docker compose logs --no-color mysql
 ```
 
-`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume; the next startup creates an empty database and reapplies all Flyway migrations, currently `V1__init_schema.sql` and `V2__add_history_version_unique_constraints.sql`.
+`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume; use it only when an intentional reset of local development data is authorized. The next startup creates an empty database and reapplies all Flyway migrations, currently `V1__init_schema.sql` and `V2__add_history_version_unique_constraints.sql`.
 
 For a manually managed empty MySQL database, grant a dedicated non-root account access to the schema, set the required values, and select `mysql`:
 
@@ -113,7 +115,7 @@ $env:CONFIG_CENTER_API_KEY = "replace-with-local-api-key"
 java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
 ```
 
-Flyway applies the V1 baseline and V2 history-version uniqueness constraints before Hibernate performs `ddl-auto=validate`. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY` and never falls back to the development key. MySQL 8.0.46 was verified for the manually managed path and MySQL 8.4.10 for the Compose path.
+Flyway applies the V1 baseline and V2 history-version uniqueness constraints before Hibernate performs `ddl-auto=validate`. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY` and never falls back to the development key. The repository supports the MySQL profile and Compose path; whether they have fresh execution evidence for the current checkout is recorded in `docs/project/CURRENT_STATE.md`.
 
 Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline; `V2__add_history_version_unique_constraints.sql` makes each history business key and version unique. Add a new `V3__...sql` or later migration for future schema changes rather than editing an applied migration. Confirm the applied/unchanged migration from the server log:
 
@@ -279,7 +281,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 
 ## Known limits
 
-- The verified `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The persistent Compose path and MySQL integration job each use a single MySQL version and a single server process; there is no database-version matrix.
+- The `local` profile uses in-memory H2 and Hibernate `ddl-auto=update`. The persistent Compose path and MySQL integration job each use a single MySQL version and a single server process; there is no database-version matrix.
 - Persistent data is a local Docker named volume, not a backup or production migration strategy. `down -v` intentionally destroys that development data and rebuilds an empty schema through Flyway.
 - The configured API Key is plaintext and intended only for local learning; it is not a replacement for secret management or user authentication.
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.
@@ -290,7 +292,8 @@ The local rate limiter groups requests by source address, HTTP method, and match
 ## Project documentation
 
 - `AGENTS.md`: mandatory working rules
-- `README.md`: verified public overview and local usage
-- `docs/project-map.md`: current architecture and behavior
+- `README.md`: public capability overview and local usage
+- `docs/project-map.md`: detailed current architecture and behavior
+- `docs/project/`: canonical project brief, durable decisions, current state, and supporting-document ownership
 - `examples.http`: request examples aligned with current authorization and response behavior
 - `config-center-server/src/main/resources/db/migration/`: append-only Flyway schema history

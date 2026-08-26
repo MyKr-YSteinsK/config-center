@@ -125,7 +125,8 @@ public class ConfigController {
             return dr;
         }
         ConfigWatchNotifier.Registration registration =
-                notifier.register(app, env, Duration.ofSeconds(timeoutSeconds), latest, traceId);
+                notifier.register(
+                        app, env, Duration.ofSeconds(timeoutSeconds), latest, sinceVersion, traceId);
 
         if (registration.accepted()) {
             long latestAfterRegistration = service.latestVersion(app, env);

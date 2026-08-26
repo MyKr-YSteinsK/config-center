@@ -263,6 +263,42 @@ class ConfigWatchIntegrationTest {
     }
 
     @Test
+    void futureCursor_isNotWokenByLowerCommittedRevision() throws Exception {
+        MvcResult futureWatcher = startWatchSince("future", "dev", 100, "future-watch", 5);
+
+        service.upsert(config("future", "dev", "key", "v1"));
+
+        assertEquals(1, service.latestVersion("future", "dev"));
+        assertEquals(1, notifier.pendingWaiterCount());
+
+        notifier.notifyChanged("future", "dev", 101);
+        futureWatcher.getAsyncResult(2_000);
+        assertWatchChanged(futureWatcher, "future-watch", 101);
+        assertEquals(0, notifier.pendingWaiterCount());
+    }
+
+    @Test
+    void mixedCursors_onlyWaiterBehindCommittedRevisionIsNotified() throws Exception {
+        for (int index = 1; index <= 4; index++) {
+            service.upsert(config("mixed", "dev", "key-" + index, "v" + index));
+        }
+
+        MvcResult normalWatcher = startWatchSince("mixed", "dev", 4, "normal-watch", 5);
+        MvcResult futureWatcher = startWatchSince("mixed", "dev", 100, "future-watch", 5);
+
+        service.upsert(config("mixed", "dev", "key-5", "v5"));
+
+        normalWatcher.getAsyncResult(2_000);
+        assertWatchChanged(normalWatcher, "normal-watch", 5);
+        assertEquals(1, notifier.pendingWaiterCount());
+
+        notifier.notifyChanged("mixed", "dev", 101);
+        futureWatcher.getAsyncResult(2_000);
+        assertWatchChanged(futureWatcher, "future-watch", 101);
+        assertEquals(0, notifier.pendingWaiterCount());
+    }
+
+    @Test
     void twoWaitingWatchers_keepOwnTraceIdsWhenWriteRequestNotifies() throws Exception {
         MvcResult first = startWatch("demo-app", "dev", "watch-one", 5);
         MvcResult second = startWatch("demo-app", "dev", "watch-two", 5);

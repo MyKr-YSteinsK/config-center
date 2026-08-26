@@ -11,6 +11,7 @@ import org.springframework.web.context.request.async.DeferredResult;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.LongAdder;
@@ -33,10 +34,16 @@ public class ConfigWatchNotifier {
 
     public Registration register(
             String app, String env, Duration timeout, long latestVersion, String traceId) {
+        return register(app, env, timeout, latestVersion, latestVersion, traceId);
+    }
+
+    public Registration register(
+            String app, String env, Duration timeout,
+            long latestVersion, long sinceVersion, String traceId) {
         NamespaceKey namespace = new NamespaceKey(app, env);
         DeferredResult<ResponseEntity<ApiResponse<ConfigWatchDto>>> result =
                 new DeferredResult<>(timeout.toMillis());
-        Waiter waiter = new Waiter(namespace, traceId, result);
+        Waiter waiter = new Waiter(namespace, sinceVersion, traceId, result);
 
         // 超时不是异常，明确回一个 changed=false，客户端就知道这轮只是“没等到新消息”。
         result.onTimeout(() -> complete(waiter, false, latestVersion));
@@ -63,22 +70,36 @@ public class ConfigWatchNotifier {
     }
 
     public void notifyChanged(String app, String env, long latestVersion) {
-        List<Waiter> waiters;
+        List<Waiter> changedWaiters = new ArrayList<>();
         synchronized (monitor) {
-            waiters = waits.remove(new NamespaceKey(app, env));
-            if (waiters == null || waiters.isEmpty()) {
+            NamespaceKey namespace = new NamespaceKey(app, env);
+            List<Waiter> namespaceWaiters = waits.get(namespace);
+            if (namespaceWaiters == null || namespaceWaiters.isEmpty()) {
                 return;
             }
-            pendingWaiterCount -= waiters.size();
+
+            Iterator<Waiter> iterator = namespaceWaiters.iterator();
+            while (iterator.hasNext()) {
+                Waiter waiter = iterator.next();
+                if (latestVersion > waiter.sinceVersion()) {
+                    changedWaiters.add(waiter);
+                    iterator.remove();
+                }
+            }
+            pendingWaiterCount -= changedWaiters.size();
+            if (namespaceWaiters.isEmpty()) {
+                waits.remove(namespace);
+            }
         }
 
-        for (Waiter waiter : waiters) {
+        for (Waiter waiter : changedWaiters) {
             waiter.result().setResult(successResponse(true, latestVersion, waiter.traceId()));
         }
     }
 
     public void completeChanged(Registration registration, long latestVersion) {
-        if (registration.accepted()) {
+        if (registration.accepted()
+                && latestVersion > registration.waiter().sinceVersion()) {
             complete(registration.waiter(), true, latestVersion);
         }
     }
@@ -135,6 +156,7 @@ public class ConfigWatchNotifier {
 
     private record Waiter(
             NamespaceKey namespace,
+            long sinceVersion,
             String traceId,
             DeferredResult<ResponseEntity<ApiResponse<ConfigWatchDto>>> result) {}
 

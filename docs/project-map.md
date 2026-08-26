@@ -1,7 +1,10 @@
 # Project Map
 
-Last reviewed against repository state: 2026-07-23
+Last reviewed against repository state: 2026-08-26
 Default branch at review time: `master`
+Review base HEAD: `bc9060e9a5a7a736a69747e06f6f419c45a14d2f`
+
+This adoption review is based on the current repository checkout. Fresh command execution evidence and unresolved delivery facts are recorded in `docs/project/CURRENT_STATE.md`; this document remains the detailed architecture map rather than a task tracker.
 
 ## 1. Project boundary
 
@@ -17,7 +20,7 @@ Its current learning focus is:
 - Basic authorization
 - Observability and automated verification
 
-The verified baseline is intentionally local and single-process. It is not intended to become a production-grade enterprise control plane without a separately approved expansion of scope.
+The current baseline is intentionally local and single-process. It is not intended to become a production-grade enterprise control plane without a separately approved expansion of scope.
 
 ## 2. Repository structure
 
@@ -41,6 +44,11 @@ config-center/
 │       └── ci.yml
 ├── docs/
 │   ├── project-map.md
+│   └── project/
+│       ├── PROJECT_BRIEF.md
+│       ├── DECISIONS.md
+│       ├── CURRENT_STATE.md
+│       └── SUPPORTING_DOCS_MANIFEST.md
 ├── config-center-server/
 │   ├── Dockerfile
 │   ├── pom.xml
@@ -336,12 +344,13 @@ The watch implementation uses the persistent `app/env` namespace revision rather
 
 Current behavior:
 
-- `sinceVersion` and `latestVersion` remain the external field names for compatibility during the first fix.
+- `sinceVersion` and `latestVersion` remain the external field names for compatibility.
 - These fields represent namespace revision, not per-item version.
 - Every successful configuration upsert and rollback advances the revision inside its transaction.
 - Waiting clients are notified after commit with the committed revision.
 - Rolled-back transactions neither expose a new revision nor notify clients.
 - The controller rechecks the revision after registering a waiter so a change cannot be lost between the initial read and registration.
+- Each waiter retains its own `sinceVersion`; a notification removes and completes only waiters whose cursor is strictly behind the committed revision. Future-cursor waiters remain pending for a later revision or timeout.
 - Waiters are indexed by an immutable `(app, env)` key, so separator characters in either value cannot collide.
 - Each waiter stores its originating request trace ID; timeout and change responses build an independent body whose `traceId` matches that request's `X-Trace-Id` response header.
 - Registration atomically enforces both the global `config-watch.max-pending-waiters` capacity and the per-namespace `config-watch.max-pending-per-namespace` capacity. A full limit returns the normal `code/message/data/traceId` error envelope with HTTP 429/code `4290`, without adding a waiter.
@@ -372,15 +381,17 @@ Persistence profiles:
 
 MySQL schema baseline:
 
+The MySQL and Compose execution statements below are historical verification records for the repository capability. They do not claim that the adoption checkout has fresh Docker/MySQL runtime evidence; see `docs/project/CURRENT_STATE.md` for the adoption cutoff and actual local outcomes.
+
 - `V1__init_schema.sql` is the immutable initial migration and creates `config_item`, `config_item_history`, `config_namespace_revision`, `feature_flag`, and `feature_flag_history`; `V2__add_history_version_unique_constraints.sql` replaces duplicate four-column history lookup indexes with unique constraints. Flyway owns `flyway_schema_history`.
 - Primary keys use MySQL identity columns. Current-row and namespace uniqueness plus history business-key/version uniqueness and three-column history lookup indexes mirror the JPA annotations.
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
-- MySQL 8.0.46 was verified from an empty schema through migration, JPA validation, API writes/history/rollback, and a no-op second startup using a dedicated non-root application account.
-- The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` only for the container-internal listener; `SERVER_BIND_ADDRESS` remains the distinct host-publication control and must be explicitly changed to expose another host interface. MySQL 8.4.10 was verified through empty initialization, API write, retained-volume restart, and deleted-volume rebuild.
+- Historical verification record: MySQL 8.0.46 was exercised from an empty schema through migration, JPA validation, API writes/history/rollback, and a no-op second startup using a dedicated non-root application account.
+- The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` only for the container-internal listener; `SERVER_BIND_ADDRESS` remains the distinct host-publication control and must be explicitly changed to expose another host interface. Historical verification exercised MySQL 8.4.10 through empty initialization, API write, retained-volume restart, and deleted-volume rebuild.
 - The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies Flyway V1/V2 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback including bounded cursor reads, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data.
 - `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
 - GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.
-- Phase 9E end-to-end acceptance verified the persistent Compose runtime from an empty named volume through configuration/Feature Flag version 1–3 and rollback, server restart, full Compose restart with data retention, then `down -v` empty-volume rebuild. The reset left the local development runtime healthy with Flyway V1/V2 and no prior acceptance data.
+- Historical verification record: Phase 9E exercised the persistent Compose runtime from an empty named volume through configuration/Feature Flag version 1–3 and rollback, server restart, full Compose restart with data retention, then `down -v` empty-volume rebuild. This is not an adoption-time runtime result and does not authorize resetting the current development volume.
 - The server image is built from the repository root with Maven Wrapper on Maven 3.9.16/JDK 17, then copies only the executable server JAR into a Java 17 JRE image and runs it as a non-root user.
 
 Client defaults:
@@ -406,10 +417,14 @@ The stabilization phases are complete. The remaining limits are explicit product
 
 ## 10. Documentation ownership
 
-- `AGENTS.md`: mandatory Codex working rules
-- `README.md`: verified public overview, build/run guide, and local demonstration
-- `docs/project-map.md`: current architecture and verified behavior
+- `AGENTS.md`: repo-specific governance, safety boundaries, and canonical-owner pointers
+- `README.md`: public capability overview, build/run guide, and local demonstration
+- `docs/project/PROJECT_BRIEF.md`: stable product boundary and non-goals
+- `docs/project/DECISIONS.md`: durable decisions and rationale
+- `docs/project/CURRENT_STATE.md`: current identity, verification cutoff, risks, and delivery state
+- `docs/project/SUPPORTING_DOCS_MANIFEST.md`: supporting-asset ownership and currentness
+- `docs/project-map.md`: detailed current architecture and behavior
 - `examples.http`: request examples aligned with current authorization and response behavior
 - `config-center-server/src/main/resources/db/migration/`: append-only Flyway schema history
 
-When code changes any architecture or behavior described here, update this file in the same patch.
+When code changes any architecture or behavior described here, update this file in the same patch. Do not use this file as a per-task progress log.
