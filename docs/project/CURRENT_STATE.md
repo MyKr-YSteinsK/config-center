@@ -15,6 +15,7 @@ This is the canonical state snapshot for the framework adoption task. It records
 - Publication policy is now verified-task auto-push: after required checks and a suitable commit, normal work is pushed to the configured upstream. Force-push, history/tag/release changes, remote changes, and destructive operations remain explicitly gated.
 - Before this baseline-consolidation task, local `master` was ahead of `origin/master` by 3 commits with the adoption and Watch changes uncommitted; the resulting commit/push state is reported in `TASK_RESULT` and verified from Git after publication.
 - Historical tag `v1.0.0` points to commit `0bce90ce8ccfe512edc04355ded2789f5ff49524`, not the adoption HEAD. POM/Docker artifact identity remains `1.0.0`; release identity is unresolved.
+- Final computer-migration audit completed on 2026-09-08: `master` and `origin/master` both point to `987ea20cd5eb48176d775129d6cd76fb5942775b`, the worktree is clean, and local/remote divergence is `0/0`. The remote `master` was freshly cloned into a temporary checkout and reproduced the same HEAD, 110 tracked files, README, migration guide, Maven Wrapper, and unchanged `v1.0.0` tag.
 
 ## Current technical baseline
 
@@ -42,7 +43,7 @@ There is no active DELETE/tombstone API, reusable SDK, frontend administration s
 
 ## Fresh verification evidence cutoff
 
-Evidence below was generated locally on 2026-08-26 and 2026-08-27 against the current checkout, including the focused Watch correctness fix and its regression tests.
+Earlier adoption evidence below was generated locally on 2026-08-26 and 2026-08-27 against the then-current checkout, including the focused Watch correctness fix and its regression tests.
 
 - `mvnw.cmd -q -B -pl config-center-server '-Dtest=ConfigWatchIntegrationTest,ConfigWatchCapacityIntegrationTest' test`: PASS — 21 focused Watch/capacity tests, 0 failures, 0 errors, 0 skipped.
 - `mvnw.cmd -q -B -pl config-center-server test`: PASS — 78 tests, 0 failures, 0 errors, 0 skipped.
@@ -54,6 +55,14 @@ Evidence below was generated locally on 2026-08-26 and 2026-08-27 against the cu
 - Remote CI status: not queried; repository configuration is source evidence, not a claim that a remote workflow is green.
 
 Historical `target/` reports and old context claims are not counted as adoption-HEAD execution evidence.
+
+### Final migration-readiness verification — 2026-09-08
+
+- `mvn -q -B clean verify`: PASS — installed Maven 3.9.16 with Java 17.0.12 ran the normal H2 path; 78 server tests and 38 client tests passed, with 0 failures, 0 errors, and 0 skipped. The process temporary directory was redirected to a workspace-local temporary directory because this machine's system Temp ACL rejects JUnit cleanup; this is an environment workaround, not a project setting.
+- `mvnw.cmd` isolated-cache portability probe: PASS — the fixed Windows Wrapper resolved and launched the pinned Maven 3.9.16 distribution when given a writable Maven user-home/cache. A first-run download was not completed in this environment because the sandboxed network connection to Maven Central was interrupted; the README documents internet access as a first-run prerequisite.
+- Git audit: no untracked files; ignored state is limited to private `.env`, IDE metadata, generated `target/` output, and local caches. No Git LFS files, submodules, tracked database/binary/credential files, or tracked machine-specific absolute paths were found. The private `.env` and external MySQL/Docker data remain intentionally outside Git.
+- Remote restore: `git clone` from `origin` passed in a temporary checkout. Remote `master` exactly matched the final HEAD, and the historical `v1.0.0` peeled commit remained unchanged. The default Windows Schannel transport had a local credential error; a per-command OpenSSL backend succeeded without changing repository configuration.
+- Docker/MySQL runtime remains NOT ESTABLISHED because the Docker daemon was unavailable. No main Compose volume was reset or modified.
 
 ## Verified correctness boundaries
 
