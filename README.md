@@ -295,5 +295,6 @@ The local rate limiter groups requests by source address, HTTP method, and match
 - `README.md`: public capability overview and local usage
 - `docs/project-map.md`: detailed current architecture and behavior
 - `docs/project/`: canonical project brief, durable decisions, current state, and supporting-document ownership
+- `docs/project/MIGRATION.md`: new-computer recovery, private configuration, local data, and computer-switching checklist
 - `examples.http`: request examples aligned with current authorization and response behavior
 - `config-center-server/src/main/resources/db/migration/`: append-only Flyway schema history
