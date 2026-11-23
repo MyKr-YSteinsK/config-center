@@ -16,3 +16,6 @@ Thumbs.db
 
 # Local environment and credentials
 .env
+
+# Local cleanup awaiting manual removal
+/docs/delete/

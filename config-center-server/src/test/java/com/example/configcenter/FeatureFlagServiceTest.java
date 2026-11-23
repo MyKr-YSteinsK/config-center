@@ -90,6 +90,26 @@ class FeatureFlagServiceTest {
     }
 
     @Test
+    void evaluatePreservesDecisionOrderAndDetails() {
+        service.upsert(feature(false, 100, List.of("u1")));
+        var disabled = service.evaluate("app", "dev", "checkout", "u1");
+        assertFalse(disabled.isEnabled());
+        assertEquals(-1, disabled.getBucket());
+        assertEquals("enabled=false（总开关已关闭）", disabled.getDecision());
+
+        service.upsert(feature(true, 38, List.of("u1")));
+        var allowlisted = service.evaluate("app", "dev", "checkout", "u1");
+        assertTrue(allowlisted.isEnabled());
+        assertEquals(-1, allowlisted.getBucket());
+        assertEquals("allowlist 命中", allowlisted.getDecision());
+
+        var bucketed = service.evaluate("app", "dev", "checkout", "u2");
+        assertFalse(bucketed.isEnabled());
+        assertEquals(38, bucketed.getBucket());
+        assertEquals("灰度分桶：bucket=38, rollout=38%", bucketed.getDecision());
+    }
+
+    @Test
     void allowlistDoesNotRetainCallerCollectionOrExposeMutableResponse() {
         List<String> requestAllowlist = new ArrayList<>(List.of("u1"));
         var created = service.upsert(feature(true, 100, requestAllowlist));

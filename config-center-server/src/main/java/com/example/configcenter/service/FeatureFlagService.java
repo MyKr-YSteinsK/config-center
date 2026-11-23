@@ -130,17 +130,9 @@ public class FeatureFlagService {
         FeatureFlag ff = repo.findByAppAndEnvAndName(app, env, name)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "Feature 不存在: " + name));
 
-        if (!ff.isEnabled()) {
-            return new FeatureEvalResult(name, userId, false, -1, "enabled=false（总开关已关闭）");
-        }
-        if (ff.getAllowlist() != null && ff.getAllowlist().contains(userId)) {
-            return new FeatureEvalResult(name, userId, true, -1, "allowlist 命中");
-        }
-
-        int bucket = evaluator.stableBucket(userId, name);
-        boolean on = bucket < ff.getRolloutPercentage();
-        String decision = "灰度分桶：bucket=" + bucket + ", rollout=" + ff.getRolloutPercentage() + "%";
-        return new FeatureEvalResult(name, userId, on, bucket, decision);
+        FeatureEvaluator.Evaluation evaluation = evaluator.evaluateWithDetails(
+                ff.isEnabled(), ff.getAllowlist(), ff.getRolloutPercentage(), userId, name);
+        return new FeatureEvalResult(name, userId, evaluation.enabled(), evaluation.bucket(), evaluation.decision());
     }
 
     private FeatureFlagDto toDto(FeatureFlag ff) {

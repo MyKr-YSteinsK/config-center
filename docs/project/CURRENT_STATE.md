@@ -1,108 +1,28 @@
-# Current Project State
+# 当前状态
 
-## Adoption snapshot
+## 2026-11-23 维护接管
 
-This is the canonical state snapshot for the framework adoption task. It records current evidence rather than copying the external migration snapshot.
+仓库 `MyKr-YSteinsK/config-center`，分支 `master`。接管前本地和远端均为 `0258b9cef02ea74a40989d035c79256c776409c0`。本轮按用户在对话中授权的范围整理现行项目入口、审查、归档和实施三处局部重构。项目孵化器使用 `AI-Workflow-Assets` 的 `750c696`，GPT Project 设置见 [项目交接](../项目源文件/00-START_HERE.md)。
 
-### Repository identity and delivery
+- 聚合 Feature Flag 判定与解释，保留关闭、allowlist、灰度优先级和原分桶输出。测试覆盖服务入口的三类解释。
+- 使用 Java 17 `HexFormat` 生成同格式弱 ETag，并锁定已知序列的原始 ETag 值。
+- HTTP 配置响应和磁盘缓存复用结构校验，保留缓存命中、304 和瞬时失败回退条件。
 
-- Repository: `config-center`
-- Adoption-start branch: `master`
-- Adoption-start HEAD: `bc9060e9a5a7a736a69747e06f6f419c45a14d2f`
-- Adoption-start worktree: clean
-- Tracking branch: `origin/master`; local state was ahead by 3 commits and behind by 0
-- Adoption documentation kept the same branch and HEAD. The intended baseline now includes those governance documents plus the focused Watch implementation, regression tests, and targeted architecture/state updates; no schema, runtime topology, tag, or release files changed.
-- Publication policy is now verified-task auto-push: after required checks and a suitable commit, normal work is pushed to the configured upstream. Force-push, history/tag/release changes, remote changes, and destructive operations remain explicitly gated.
-- Before this baseline-consolidation task, local `master` was ahead of `origin/master` by 3 commits with the adoption and Watch changes uncommitted; the resulting commit/push state is reported in `TASK_RESULT` and verified from Git after publication.
-- Historical tag `v1.0.0` points to commit `0bce90ce8ccfe512edc04355ded2789f5ff49524`, not the adoption HEAD. POM/Docker artifact identity remains `1.0.0`; release identity is unresolved.
-- Final computer-migration audit completed on 2026-09-08: the migration-readiness changes are in `987ea20cd5eb48176d775129d6cd76fb5942775b`, followed by the audit state record `e286f7cbd0032ea25d6b09a7dc867960e35aeb2d` and a documentation-only SHA correction. After that publication chain, `master`/`origin/master` were re-verified with a clean worktree and `0/0` divergence. The remote `master` was freshly cloned into a temporary checkout at the readiness commit and reproduced the same 110 tracked files, README, migration guide, Maven Wrapper, and unchanged `v1.0.0` tag.
+## 当轮验证
 
-## Current technical baseline
+| 环境与命令 | 结果 |
+| --- | --- |
+| Windows、JDK 17.0.12、Maven Wrapper 3.9.16，`.\mvnw.cmd -q -B clean verify` | 服务端 79 项、客户端 38 项通过，无失败或跳过。两个模块生成 JaCoCo 报告。测试 JVM 的临时目录指向忽略区。 |
+| 本机 loopback，运行本次打包的 JAR，`local` H2 profile | 用合成数据验证写入、空 body 的 304、已经注册的 Watch 唤醒及 traceId、expectedVersion 冲突、回滚到新版本、历史顺序和 allowlist。 |
+| 本机实际 Java CLI，`spring-boot:run` + 隔离用户缓存 | 首次 HTTP 读取及 Feature Flag 评估通过，第二次读取命中 304。带加号的 userId 另见审查结论。 |
+| GitHub Actions H2、MySQL 8.4 | 接管前基线 `0258b9c` 的 `build-test` 与 `mysql-integration` 已通过。接管后的结果按实际提交核对 [工作流](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml)。 [基线运行](https://github.com/MyKr-YSteinsK/config-center/actions/runs/34239707152) |
+| 本机 MySQL/Compose | Docker Desktop Linux 引擎管道不可用，本轮未在本机运行或重置 MySQL/Compose。远端 MySQL 作业验证隔离的数据库与应用集成。 |
 
-- Java 17, Spring Boot `3.5.10`, Maven multi-module build, and Maven Wrapper pinned to Maven `3.9.16`.
-- `config-center-server`: Spring MVC/JPA API, current/history persistence, rollback, Feature Flag evaluation, ETag, Watch, API-key authorization, rate limiting, trace/error handling, and metrics.
-- `config-center-client`: Java CLI demonstration client with HTTP retry, availability circuit breaker, response validation, ETag/disk cache, transient-failure fallback, and Watch refresh.
-- `local`: in-memory H2, Hibernate `ddl-auto=update`, Flyway disabled.
-- `test`: randomized in-memory H2, Hibernate `ddl-auto=create-drop`, Flyway disabled.
-- `mysql`: explicit MySQL connection/API-key settings, Flyway enabled, Hibernate `ddl-auto=validate`.
-- Persistent schema history consists of immutable `V1__init_schema.sql` and `V2__add_history_version_unique_constraints.sql`; no migration file was changed by adoption.
-- Main Compose is a local persistent MySQL/server topology with a named development volume and loopback host publication by default. `compose.mysql-it.yml` is the separate `config_center_it` integration topology.
+## 风险与待决
 
-## Capability status
+- 已复现 CLI 会二次编码 userId 中的加号。对有表示的配置列表，实际 `If-None-Match: *` 返回 200。H2 上配置回滚用 500 字符的合法输入会因写入历史时拼接前缀而返回 409，读回确认仍是原版本和原历史。三者列入 [升级提案](../项目源文件/UPGRADE_ROADMAP.md)。
+- MySQL 排序规则与进程中的精确字符串键可能对命名空间别名产生不同分组，仍需独立复核。Watch 通知、等待容量、timeout、traceId 和事务可见性须联动回归。单实例限流和 Watch，以及 CLI 明文缓存，限定了当前适用范围。
+- 构建路径仍用 `1.0.0`，旧标签 `v1.0.0` 的目标为 `0bce90ce8ccfe512edc04355ded2789f5ff49524`。版本与发布决策待用户确认。
+- 前端、SDK、跨项目联动及可靠变更的新契约处在待审阶段。RunProof 中的既有适配有旧提交与构建 pin，测试新候选需要新的证据。用户可从 [升级提案](../项目源文件/UPGRADE_ROADMAP.md) 选择下一条主线。
 
-The following capabilities are present in the current source; the focused and full H2 suites above provide fresh local evidence for this checkout:
-
-- configuration upsert/read/list, bounded history, optimistic expected-version protection, and rollback as a new version;
-- Feature Flag upsert/read/evaluate, bounded history, allowlist and deterministic rollout, and rollback;
-- configuration ETag/304 reads;
-- namespace-revision long-poll Watch with per-waiter cursor filtering, after-commit notification, trace preservation, timeout, capacity, and lifecycle handling;
-- API-key authorization for configuration/Feature Flag writes, structured errors, rate limiting, trace/metrics endpoints;
-- Java CLI retry, circuit breaker, validated disk cache, fallback, and Watch refresh.
-
-There is no active DELETE/tombstone API, reusable SDK, frontend administration system, distributed coordination layer, production backup/recovery flow, or release/publish/deploy pipeline.
-
-## Fresh verification evidence cutoff
-
-Earlier adoption evidence below was generated locally on 2026-08-26 and 2026-08-27 against the then-current checkout, including the focused Watch correctness fix and its regression tests.
-
-- `mvnw.cmd -q -B -pl config-center-server '-Dtest=ConfigWatchIntegrationTest,ConfigWatchCapacityIntegrationTest' test`: PASS — 21 focused Watch/capacity tests, 0 failures, 0 errors, 0 skipped.
-- `mvnw.cmd -q -B -pl config-center-server test`: PASS — 78 tests, 0 failures, 0 errors, 0 skipped.
-- `mvnw.cmd -q -B -pl config-center-client test`: PASS — 38 tests, 0 failures, 0 errors, 0 skipped.
-- `mvnw.cmd -q -B clean verify`: PASS — 116 tests, 0 failures, 0 errors, 0 skipped; both modules built and JaCoCo verify completed.
-- `mvnw.cmd -q -B -Pmysql-it verify`: NOT RUN — the isolated MySQL service could not be started because the Docker daemon was unavailable. No MySQL/Flyway/JPA runtime result is inferred.
-- `docker compose -p config-center-migration-it-20260826 -f compose.yml -f compose.mysql-it.yml config --quiet`: PASS — the isolated Compose configuration parsed successfully.
-- Docker/Compose runtime smoke: NOT ESTABLISHED — Docker Compose reported that the Docker Desktop Linux engine named pipe was unavailable, so no container, healthcheck, API flow, volume operation, or restart test was performed.
-- Remote CI status: not queried; repository configuration is source evidence, not a claim that a remote workflow is green.
-
-Historical `target/` reports and old context claims are not counted as adoption-HEAD execution evidence.
-
-### Final migration-readiness verification — 2026-09-08
-
-- `mvn -q -B clean verify`: PASS — installed Maven 3.9.16 with Java 17.0.12 ran the normal H2 path; 78 server tests and 38 client tests passed, with 0 failures, 0 errors, and 0 skipped. The process temporary directory was redirected to a workspace-local temporary directory because this machine's system Temp ACL rejects JUnit cleanup; this is an environment workaround, not a project setting.
-- `mvnw.cmd` isolated-cache portability probe: PASS — the fixed Windows Wrapper resolved and launched the pinned Maven 3.9.16 distribution when given a writable Maven user-home/cache. A first-run download was not completed in this environment because the sandboxed network connection to Maven Central was interrupted; the README documents internet access as a first-run prerequisite.
-- Git audit: no untracked files; ignored state is limited to private `.env`, IDE metadata, generated `target/` output, and local caches. No Git LFS files, submodules, tracked database/binary/credential files, or tracked machine-specific absolute paths were found. The private `.env` and external MySQL/Docker data remain intentionally outside Git.
-- Remote restore: `git clone` from `origin` passed in a temporary checkout at the readiness commit; the subsequent state-record documentation and SHA correction were pushed and the remote branch was re-verified. The historical `v1.0.0` peeled commit remained unchanged. The default Windows Schannel transport had a local credential error; a per-command OpenSSL backend succeeded without changing repository configuration.
-- Docker/MySQL runtime remains NOT ESTABLISHED because the Docker daemon was unavailable. No main Compose volume was reset or modified.
-
-## Verified correctness boundaries
-
-### Watch future-cursor correctness
-
-The current implementation stores each waiter's `sinceVersion` and completes it as changed only when the committed namespace revision is strictly greater than that cursor. Notifications retain future-cursor waiters, while normal cursors still complete and timeout/capacity cleanup remains covered by the server regression suite.
-
-## Known risks and limitations
-
-### MEDIUM — Release/version identity drift
-
-POM/Docker artifact naming remains `1.0.0`, while historical tag `v1.0.0` is not the current HEAD. The correct release baseline is a pending user decision; no release action is part of adoption.
-
-### MEDIUM — Process-local and local-only boundaries
-
-Watch waiters, rate-limit buckets, and first-namespace-row locking are JVM-local; client disk cache has no encryption or cross-process lock. These are explicit learning-project limits, not evidence of multi-instance capability.
-
-### MEDIUM — External delivery facts are unknown
-
-The repository does not prove the existence or state of an external registry, deployed environment, backups, monitoring owner, release approval, or remote CI result. Adoption makes no claim about them.
-
-### LOW/MEDIUM — Non-loopback deployment needs a new review
-
-API keys are plaintext local configuration, and H2 Console, Swagger, Actuator details, and write APIs are only appropriate within the local boundary described by the project. Changing bind/publication settings requires an explicit security/deployment decision and verification.
-
-## Adoption delta and legacy disposition
-
-- Fresh repository identity matched the supplied migration snapshot; current evidence takes precedence.
-- The old root `AGENTS.md` was replaced by a lean repo-specific contract. Its valid project boundaries were extracted into this file, `PROJECT_BRIEF.md`, `DECISIONS.md`, the supporting manifest, and the revised permanent docs.
-- Deleted historical dev-plan/persistent-deployment-plan/patch-log files were not restored; Git history remains their archive.
-- External old ChatGPT/Codex context, asset manifests, audits, and the migration Plan remain outside the repository as read-only history/input. Durable rationale was extracted; they are not active owners.
-- No private `.env`, IDE state, Maven target/report output, credentials, or migration-package file was added to canonical project state.
-
-## Pending USER CHECK
-
-No adoption-blocking USER CHECK is required. The following remain pending and must be decided before the corresponding future action:
-
-1. release/version/tag baseline and whether `1.0.0` should remain the learning-version identity;
-2. external delivery facts such as registry, deployment, backup, monitoring, or approval ownership;
-
-## Active work and checkpoint boundary
-
-The Migration Checkpoint has passed. Current work is normal focused development within the documented local-first boundary, with verified normal Tasks following the D-011 commit-and-push policy. The baseline consolidation does not change schema, release identity, Compose topology, or network exposure. MySQL/Docker runtime evidence remains unverified locally until the Docker daemon is available.
+恢复与数据操作见 [运行手册](RUNBOOK.md)。历史证据和本机手动清理位置见 [历史整理](HISTORY.md)。

@@ -1,8 +1,6 @@
 # config-center
 
-`config-center` is a lightweight configuration center and Feature Flag learning project built with Java 17, Spring Boot 3, Spring Data JPA, H2, MySQL, Flyway, and a Maven multi-module layout. H2 remains the zero-dependency local and test database; the explicit `mysql` profile provides persistent storage with a versioned schema.
-
-The repository contains a local baseline for configuration versioning, rollback, conditional HTTP reads, long polling, Feature Flag evaluation, and a resilient Java demo client. These are repository capabilities, not a release or production claim; adoption-time execution evidence for this checkout is tracked in `docs/project/CURRENT_STATE.md`. The project is intentionally smaller than a production control plane.
+`config-center` is a Java 17 and Spring Boot configuration center with versioned writes, rollback, Feature Flag evaluation, and a resilient Java CLI. The local walkthrough shows configuration reads with ETag, namespace Watch, and how a feature decision is explained. H2 provides a zero-dependency local start. MySQL and Flyway provide versioned persistent storage.
 
 ## Repository capabilities
 
@@ -57,7 +55,7 @@ The build runs both modules' tests and generates JaCoCo reports under:
 - `config-center-server/target/site/jacoco/index.html`
 - `config-center-client/target/site/jacoco/index.html`
 
-The commands and files below describe the repository's supported local paths. Fresh adoption-time execution evidence for this checkout is recorded separately in `docs/project/CURRENT_STATE.md`; historical reports, CI configuration, and Docker/Compose definitions are not substitutes for a current local run.
+See [current verification](docs/project/CURRENT_STATE.md) for the tested build and environment.
 
 ## Quick start: H2
 
@@ -115,7 +113,7 @@ $env:CONFIG_CENTER_API_KEY = "replace-with-local-api-key"
 java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
 ```
 
-Flyway applies the V1 baseline and V2 history-version uniqueness constraints before Hibernate performs `ddl-auto=validate`. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY` and never falls back to the development key. The repository supports the MySQL profile and Compose path; whether they have fresh execution evidence for the current checkout is recorded in `docs/project/CURRENT_STATE.md`.
+Flyway applies the V1 baseline and V2 history-version uniqueness constraints before Hibernate performs `ddl-auto=validate`. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY`.
 
 Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline; `V2__add_history_version_unique_constraints.sql` makes each history business key and version unique. Add a new `V3__...sql` or later migration for future schema changes rather than editing an applied migration. Confirm the applied/unchanged migration from the server log:
 
@@ -139,7 +137,7 @@ docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml down -
 
 The `mysql-it` profile uses Failsafe and the dedicated `config_center_it` schema. The normal `clean verify` remains H2-only and does not require Docker.
 
-## Verified local demonstration
+## Local walkthrough
 
 The following PowerShell sequence assumes a freshly started server using the deterministic command above. The default development API Key authorizes configuration and Feature Flag writes for `demo-app/dev`. Set `CONFIG_CENTER_API_KEY` before starting the server to replace the default key.
 
@@ -226,7 +224,7 @@ Remove the argument to use the configured five long-poll rounds. The final `cach
 
 The client retries 5xx and network failures and may use a structurally valid cached configuration only after those transient attempts are exhausted. A cache entry is valid only when its body is a configuration response with integral `code: 0` and array `data`; malformed entries neither send an ETag nor satisfy a 304 response or fallback. HTTP 4xx responses, including 429, neither retry nor open the availability circuit breaker and never return stale cache as success; requests rejected by an already-open breaker also do not fall back.
 
-Client query values are percent-encoded before requests. Fresh HTTP 200 responses must contain numeric `code: 0` and non-null `data`; configuration data must be an array, while watch data requires boolean `changed` and a non-negative integral `latestVersion`. A valid cached body with a missing or blank ETag remains eligible for fallback but sends an unconditional request. Malformed successful responses are protocol errors and are not cached. Cache writes use a completed same-directory temporary file, atomic replacement when supported, and a safe replacement fallback otherwise; the JSON format remains unchanged.
+Fresh HTTP 200 responses must contain integral `code: 0` and non-null `data`. Configuration data must be an array, while Watch data requires boolean `changed` and a non-negative integral `latestVersion`. A valid cached body with a missing or blank ETag remains eligible for fallback and sends an unconditional request. Malformed successful responses are protocol errors. Cache writes use a completed file in the same directory and atomic replacement when supported. The [known CLI encoding issue](docs/项目源文件/UPGRADE_ROADMAP.md#仓库审查) affects query values such as user IDs containing a plus sign.
 
 ## Public API
 
@@ -255,7 +253,7 @@ Configuration watch requires `sinceVersion >= 0` and `timeoutSeconds` within `1.
 
 Within one server process, concurrent first writes to different keys in the same `app + env` namespace are serialized through a bounded 64-stripe lock, so both writes commit with distinct history rows and a monotonic namespace revision.
 
-Write-request string limits match the persistence model, expected and rollback target versions must be positive, and Feature Flag allowlists accept at most 20 non-blank entries of 32 characters each. Invalid bodies or query types return HTTP 400/code `4001`. Unexpected server failures return only code `5000` and `系统异常`; diagnostic details and the full stack trace remain in server logs under the response trace ID.
+Write requests validate string lengths and require positive expected and rollback target versions when supplied. Feature Flag allowlists accept at most 20 non-blank entries of 32 characters each. Invalid bodies or query types return HTTP 400/code `4001`. Unexpected server failures return code `5000` and `系统异常`. Diagnostic details and the stack trace are logged with the response trace ID.
 
 The local rate limiter groups requests by source address, HTTP method, and matched route pattern, with an access-order bucket cap to bound memory use. Micrometer exposes the monotonic FunctionCounter as `config_center_rate_limit_blocked`; Prometheus renders the counter sample as `config_center_rate_limit_blocked_total`. Watch metrics expose current pending waiters and active namespaces as `config_center_watch_pending` and `config_center_watch_namespaces`, while the monotonic rejection FunctionCounter `config_center_watch_rejected` is rendered by Prometheus as `config_center_watch_rejected_total`.
 
@@ -291,10 +289,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 
 ## Project documentation
 
-- `AGENTS.md`: mandatory working rules
-- `README.md`: public capability overview and local usage
-- `docs/project-map.md`: detailed current architecture and behavior
-- `docs/project/`: canonical project brief, durable decisions, current state, and supporting-document ownership
-- `docs/project/MIGRATION.md`: new-computer recovery, private configuration, local data, and computer-switching checklist
-- `examples.http`: request examples aligned with current authorization and response behavior
-- `config-center-server/src/main/resources/db/migration/`: append-only Flyway schema history
+- [Architecture map](docs/project-map.md) and [example requests](examples.http)
+- [Current verification](docs/project/CURRENT_STATE.md) and [runbook](docs/project/RUNBOOK.md)
+- [Maintainer entry point](AGENTS.md) and [documentation index](docs/project/SUPPORTING_DOCS_MANIFEST.md)
+- [GPT Project setup](docs/项目源文件/00-START_HERE.md) and [proposed upgrade roadmap](docs/项目源文件/UPGRADE_ROADMAP.md)

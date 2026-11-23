@@ -1,68 +1,22 @@
-# Repository instructions — `config-center`
+# config-center｜开发入口
 
-## Repository boundary
+本仓库以可运行的 Java 17 / Spring Boot 3 配置中心和 Feature Flag 服务展示后端工程能力。现行基线为单实例服务端、Java CLI、H2 本地与测试路径、MySQL + Flyway 持久化路径。
 
-`config-center` is a lightweight, local-first configuration center and Feature Flag learning project. Keep it understandable, runnable, testable, and explainable. It is a single-instance learning project, not an enterprise control plane.
+## 恢复工作
 
-The repository contains one Spring Boot server module and one Java CLI demonstration client. Preserve Java 17, Spring Boot 3, the Maven multi-module layout, existing API paths and JSON field names, H2 fast local/test behavior, and MySQL + Flyway persistent-runtime behavior unless a task explicitly authorizes a compatibility change.
+- 先读 [目标与兼容约束](docs/project/PROJECT_BRIEF.md) 和 [当前状态](docs/project/CURRENT_STATE.md)。按任务读取 [决定](docs/project/DECISIONS.md)、[运行手册](docs/project/RUNBOOK.md) 或 [架构地图](docs/project-map.md)。
+- 普通任务可直接在 Codex 执行。正式 GPT Project 交接优先使用已授权的目标仓库 Issue，取得完整正文后核对范围和验收。公开 Issue 只包含可公开信息。项目资料及人工同步入口在 [GPT Project 交接](docs/项目源文件/00-START_HERE.md)。
+- 在授权内自主实施和验证，实质状态与长期决定写回各自文件。后续升级以 [待审提案](docs/项目源文件/UPGRADE_ROADMAP.md) 为入口，由用户选择后单独实施。`docs/delete/` 是本机待清理区。
 
-## Canonical ownership
+## 兼容与数据边界
 
-- Current code and tests are the authority for implemented behavior.
-- `config-center-server/src/main/resources/db/migration/` is the authority for persistent schema history. Applied migrations are immutable and append-only.
-- `docs/project/PROJECT_BRIEF.md` owns stable product purpose, boundaries, priorities, invariants, and non-goals.
-- `docs/project/DECISIONS.md` owns accepted durable decisions and their rationale, including explicitly recorded conflicts or unresolved choices.
-- `docs/project/CURRENT_STATE.md` owns adoption-time repository identity, evidence cutoff, delivery facts, known risks, and pending checks.
-- `docs/project/SUPPORTING_DOCS_MANIFEST.md` owns the role and currentness map for supporting assets.
-- `docs/project-map.md` is the detailed architecture and runtime map; `README.md` is the public capability/build/run guide; `examples.http` is the manual request example set.
-- `.github/workflows/ci.yml`, the POMs/Maven Wrapper, application profiles, Compose files, Dockerfile, and `.env.example` remain the executable/configuration authorities for their own scopes.
-- External Plans, handoffs, checklists, old contexts, and patch logs are read-only execution/history inputs, not current project source of truth.
+- 维护已有 Java / Maven 入口、API 路径、JSON 字段与错误语义。配置当前行、历史和命名空间 revision 在同一事务内写入，Watch 在提交后唤醒。两类业务历史均追加写入，回滚创建新版本。
+- 修改 Watch、客户端重试 / 缓存、JPA / Flyway 或 Compose 时，沿完整调用链核对兼容回归。现有的 MySQL V1/V2 迁移不可编辑。新迁移以 V3 或更高版本追加。
+- 运行时保持主机 loopback 边界。真实凭证只存在于私有配置或环境，本地 API key 和诊断接口遵循现有使用范围。保留主 Compose 数据卷，MySQL 测试使用隔离的 `config_center_it`。数据库账户使用专用非 root 用户。
+- 涉及新公开接口或网络暴露、破坏性数据操作、变更既有兼容契约、跨项目写入、发布身份或标签，由用户决定后执行。
 
-Do not restore the retired `docs/dev-plan.md`, `docs/config-center-dev-plan-v2.md`, `docs/config-center-persistent-deployment-plan.md`, or `docs/patch-log.md`. Their history remains in Git.
+## 验证与同步
 
-## Build and test semantics
-
-Use the Maven Wrapper and Java 17. On Windows use `mvnw.cmd`; on Unix-like systems and CI use `mvnw`.
-
-- `./mvnw -q -B -pl config-center-server test` (or the Windows equivalent) runs the server's H2-backed focused suite.
-- `./mvnw -q -B -pl config-center-client test` runs the client reliability/cache suite.
-- `./mvnw -q -B clean verify` builds both modules, runs the normal H2 test path, and produces JaCoCo reports.
-- `./mvnw -q -B -Pmysql-it verify` runs `MysqlPersistenceIT` through Failsafe against the separately supplied MySQL integration database; it is not a substitute for the H2 fast path.
-
-Compilation alone is not evidence for service, persistence, concurrency, client reliability, or protocol behavior. Test evidence must be labelled by the command and repository state that produced it. Historical `target/` reports are generated artifacts, not current verification.
-
-## Persistence and schema invariants
-
-- `local` uses in-memory H2 with Hibernate `ddl-auto=update`; `test` uses randomized in-memory H2 with `create-drop`; both disable Flyway.
-- `mysql` requires explicit database URL/username/password and a nonblank API key, enables Flyway, and uses Hibernate `ddl-auto=validate`.
-- Never edit applied Flyway V1/V2 files. A future schema change requires a new V3-or-later migration and corresponding verification.
-- Per-item business versions, append-only history, rollback-as-new-version, and the `app + env` namespace revision are distinct invariants.
-
-## Local runtime, data, and secrets
-
-- Direct JAR processes default to `127.0.0.1` through `SERVER_ADDRESS`.
-- The persistent Compose server binds `0.0.0.0` only inside its container; `SERVER_BIND_ADDRESS` controls host publication and defaults to `127.0.0.1`.
-- The main Compose MySQL named volume is local development data. Do not run `docker compose down -v` or an equivalent destructive operation against the main project without explicit authorization.
-- MySQL integration uses the dedicated `config_center_it` schema and a separate Compose project/volume (normally the `compose.mysql-it.yml` overlay). Only that isolated test topology may be reset as part of authorized integration verification.
-- The MySQL application account must not be root. Keep real `.env` values, passwords, API keys, tokens, certificates, and private credentials outside Git and out of logs; `.env.example` contains placeholders only.
-- Do not widen a bind address, expose a new port/endpoint, or treat local API keys, H2 Console, Swagger, or Actuator details as production security without an explicit boundary decision and verification.
-
-## High-risk coupling and stop conditions
-
-Treat these as coupled behavior boundaries when diagnosing or changing them:
-
-- `ConfigService`, `ConfigNamespaceRevisionService`, `NamespaceRevisionLock`, `ConfigWatchNotifier`, and the Watch controller jointly define transaction visibility, namespace revision, after-commit notification, waiter capacity/lifecycle, trace IDs, and concurrency.
-- `ReliableHttp`, `RetryPolicy`, `CircuitBreaker`, `ConfigClient`, and `HttpDiskCache` jointly define HTTP status classification, protocol validation, ETag/304 use, retry, fallback, and cache replacement.
-- JPA entities, repository queries, Flyway migrations, the MySQL profile, and `MysqlPersistenceIT` jointly define the persistent schema contract.
-- Compose volume names, health checks, host bindings, and `compose.mysql-it.yml` jointly define the local data boundary.
-
-Watch behavior is a coupled product boundary; documentation/governance work alone does not authorize changing it. Record newly exposed product-contract conflicts in Project State and stop before changing product code. Stop the affected action if it would require history/tag rewriting, a version or release decision, a non-loopback deployment decision, a real secret, an applied migration edit, a destructive operation, or a remote action outside the default delivery boundary.
-
-## Delivery boundary
-
-For a normal development Plan/Task, after required verification passes and diff, secret, migration, and version boundaries are checked, create an appropriate focused commit and by default push it to the current branch's configured upstream. Report the commit SHA, push target, push outcome, and final local/remote sync state in `TASK_RESULT`.
-
-- Do not force-push or use `--force-with-lease` unless the user explicitly authorizes that specific operation.
-- Do not rewrite published history, change the remote URL, create or delete another remote branch during routine cleanup, move/re-tag `v1.0.0`, bump the unresolved release identity, or create release/publish/deploy automation.
-- Destructive remote actions and any release/version/tag action still require explicit authorization.
-- If there is no upstream, publication would require creating a remote branch, the push is non-fast-forward, or authentication/network fails, stop the publication sub-action and report it. Do not force, rewrite, rebase, or merge unknown remote changes.
+- 使用 JDK 17 与 Maven Wrapper。`./mvnw -q -B clean verify` 运行两个模块的 H2/客户端测试。涉及 MySQL 的改动用独立数据库执行 `./mvnw -q -B -Pmysql-it verify` 或核对对应的远端 CI。Windows 用 `.\mvnw.cmd`。细节见 [运行手册](docs/project/RUNBOOK.md)。
+- 正常开发任务按 D-011，在必要验收及 diff、凭证、迁移、版本检查后提交，并快进推送到当前分支已配置上游。核对实际远端 SHA。没有上游、非快进或认证/网络受阻时，报告该交付缺口。创建其他远端分支、改 remote、强推、改写历史、移标签及部署/发布须单独授权。
+- 回执给出关键变更、实际验收、提交 SHA、推送目标与本地/远端同步状态。

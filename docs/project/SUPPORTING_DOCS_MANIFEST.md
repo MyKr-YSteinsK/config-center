@@ -1,30 +1,16 @@
-# Supporting Documents Manifest
+# 资料索引
 
-This manifest makes the active ownership of repository assets explicit. It is an ownership map, not a task tracker.
+| 内容 | 维护入口 |
+| --- | --- |
+| 稳定目标、当前功能范围、兼容约束 | [PROJECT_BRIEF.md](PROJECT_BRIEF.md) |
+| 已接受的长期决定、D-011 和待定版本 | [DECISIONS.md](DECISIONS.md) |
+| 当前基线、证据与维护风险 | [CURRENT_STATE.md](CURRENT_STATE.md) |
+| 环境、数据归属、恢复与排障 | [RUNBOOK.md](RUNBOOK.md) |
+| 历史里程碑与本地待清理内容 | [HISTORY.md](HISTORY.md) |
+| 干净检出的公开使用说明与 API 请求 | [README.md](../../README.md)、[examples.http](../../examples.http) |
+| Java 模块、组件、协议和数据路径 | [架构地图](../project-map.md) |
+| Codex 入口、GPT Project 手动同步和后续选项 | [AGENTS.md](../../AGENTS.md)、[项目源文件入口](../项目源文件/00-START_HERE.md) |
+| 编译、验证和依赖 | [父 POM](../../pom.xml)、[Wrapper 版本](../../.mvn/wrapper/maven-wrapper.properties)、[CI](../../.github/workflows/ci.yml) |
+| 持久 schema 与本地运行拓扑 | [Flyway 迁移](../../config-center-server/src/main/resources/db/migration/)、[主 Compose](../../compose.yml)、[MySQL 测试 overlay](../../compose.mysql-it.yml)、[Dockerfile](../../config-center-server/Dockerfile) |
 
-| Asset | Canonical owner / role | Adoption status and currentness | Visibility |
-|---|---|---|---|
-| `AGENTS.md` | Lean repository-specific governance, safety boundaries, command semantics, and ownership pointers | Replaced during adoption; does not own generic Skill workflow or retired plan/patch-log tracking | Repository-root instruction visible to Codex and contributors |
-| `docs/project/PROJECT_BRIEF.md` | Stable product purpose, boundary, priorities, invariants, and non-goals | Created during adoption; current at the adoption evidence cutoff | Tracked canonical project state visible to agents and contributors |
-| `docs/project/DECISIONS.md` | Accepted durable decisions, rationale, superseded decisions, and unresolved release identity | Created during adoption; current with the D-011 publication-policy transition | Tracked canonical project state visible to agents and contributors |
-| `docs/project/CURRENT_STATE.md` | Current repository identity, evidence cutoff, capabilities, risks, delivery state, and pending checks | Created during adoption; current after final verification update | Tracked canonical project state visible to agents and contributors |
-| `docs/project/MIGRATION.md` | Clone-based recovery, private configuration, local data, environment prerequisites, and computer-switching checklist | Added for migration readiness; contains no secrets or machine-specific values | Tracked operational guide visible to agents and contributors |
-| `docs/project/SUPPORTING_DOCS_MANIFEST.md` | Supporting-asset ownership/currentness map | Created during adoption | Tracked canonical project state visible to agents and contributors |
-| `README.md` | Public capability overview, prerequisites, build/run instructions, API summary, local boundaries, and user-facing limitations | Targeted revision during adoption; current claims distinguish repository support from fresh execution evidence | Public repository documentation |
-| `docs/project-map.md` | Detailed architecture, module responsibilities, data flow, runtime profiles, behavior paths, and limits | Targeted re-review during adoption; current review date and per-waiter Watch cursor behavior recorded | Tracked architecture documentation visible to agents and contributors |
-| `examples.http` | Manual HTTP request examples aligned with the current API | Inspected; retained unchanged because no actual API mismatch was found; not an automated test | Tracked manual-use artifact |
-| `config-center-server/src/main/resources/db/migration/V1__init_schema.sql` and `V2__add_history_version_unique_constraints.sql` | Immutable persistent MySQL schema history | Inspected; intentionally unchanged; future changes require V3 or later | Tracked executable migration input |
-| `.github/workflows/ci.yml` | Executable H2 build/test and MySQL integration CI reference | Inspected; intentionally unchanged; workflow configuration is not proof of a current remote run | Tracked CI executable reference |
-| `compose.yml` | Local persistent MySQL/server topology and main development volume boundary | Inspected; intentionally unchanged; local-only and non-destructive volume boundary retained | Tracked local runtime definition |
-| `compose.mysql-it.yml` | Isolated MySQL integration overlay, schema, loopback test port, and separate project/volume topology | Inspected; intentionally unchanged; use only for isolated integration verification | Tracked test-runtime definition |
-| `.env.example` | Placeholder local Compose/manual-MySQL configuration reference | Inspected; intentionally unchanged; contains placeholders only | Tracked placeholder configuration reference |
-| `pom.xml`, module POMs, `.mvn/`, `mvnw`, `mvnw.cmd` | Java/Maven/module/dependency/lifecycle build contract | Inspected; intentionally unchanged | Tracked build inputs and entry points |
-| `config-center-server/Dockerfile` and `.dockerignore` | Local server image build/runtime boundary | Inspected; intentionally unchanged; no image publish or release identity is implied | Tracked local container-build definition |
-| Server/client source and tests | Implemented behavior and regression evidence | Kept active; the current Watch correctness task updates only the server Watch path and its regression coverage | Tracked implementation and test sources |
-| `.env`, `.idea/**`, `**/target/**`, Surefire/JaCoCo output | Private local configuration, IDE state, and generated artifacts | Kept ignored/private; not read into state, copied, or committed | Local-only/ignored; not canonical project knowledge |
-
-## Retired and external assets
-
-- `docs/dev-plan.md`, `docs/config-center-dev-plan-v2.md`, `docs/config-center-persistent-deployment-plan.md`, and `docs/patch-log.md` are deleted historical assets. They are archived by Git history and are not restored or active owners.
-- Old ChatGPT/Codex contexts, repository audits, asset manifests, and one-time migration prompts are external read-only history/input. Durable project-specific information is extracted into the canonical files above; the external files are not copied into the repository.
-- There is no separate authoritative visual/UX specification, API contract document, data dictionary, ADR set, release runbook, backup runbook, or changelog. The repository does not create empty stand-ins for those absent assets.
+当前实现依据代码、配置和对应版本的运行证据判断。项目附件依据 [同步入口](../项目源文件/00-START_HERE.md) 使用。临时 Plan、旧电脑迁移报告和 `docs/delete/` 中的材料用于回溯。

@@ -3,6 +3,7 @@ package com.example.configcenter.service;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -23,10 +24,7 @@ public class EtagUtil {
                 updateLength(md, bytes.length);
                 md.update(bytes);
             }
-            byte[] digest = md.digest();
-            StringBuilder sb = new StringBuilder();
-            for (byte b : digest) sb.append(String.format("%02x", b));
-            return "W/\"" + sb + "\"";
+            return "W/\"" + HexFormat.of().formatHex(md.digest()) + "\"";
         } catch (Exception e) {
             throw new IllegalStateException("ETag compute failed", e);
         }

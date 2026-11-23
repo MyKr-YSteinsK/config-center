@@ -49,11 +49,7 @@ public class ConfigClient {
         }
 
         String body = response.getBody();
-        JsonNode data = requireSuccessfulData(body, "CONFIG");
-        if (!data.isArray()) {
-            throw protocolError("CONFIG_DATA_TYPE");
-        }
-
+        requireConfigList(body);
         cache.put(url, response.getHeaders().getETag(), body);
         return new FetchResult(body, false, false);
     }
@@ -64,9 +60,16 @@ public class ConfigClient {
         }
 
         try {
-            return requireSuccessfulData(cached.body, "CONFIG").isArray() ? cached : null;
+            requireConfigList(cached.body);
+            return cached;
         } catch (HttpRequestFailedException ignored) {
             return null;
+        }
+    }
+
+    private void requireConfigList(String body) {
+        if (!requireSuccessfulData(body, "CONFIG").isArray()) {
+            throw protocolError("CONFIG_DATA_TYPE");
         }
     }
 

@@ -1,10 +1,6 @@
 # Project Map
 
-Last reviewed against repository state: 2026-08-26
-Default branch at review time: `master`
-Review base HEAD: `bc9060e9a5a7a736a69747e06f6f419c45a14d2f`
-
-This adoption review is based on the current repository checkout. Fresh command execution evidence and unresolved delivery facts are recorded in `docs/project/CURRENT_STATE.md`; this document remains the detailed architecture map rather than a task tracker.
+Architecture review updated on 2026-11-23. See [current verification](project/CURRENT_STATE.md) for the tested candidate and deployment limits.
 
 ## 1. Project boundary
 
@@ -44,10 +40,13 @@ config-center/
 │       └── ci.yml
 ├── docs/
 │   ├── project-map.md
+│   ├── 项目源文件/         # GPT Project setup and upgrade proposal
 │   └── project/
 │       ├── PROJECT_BRIEF.md
 │       ├── DECISIONS.md
 │       ├── CURRENT_STATE.md
+│       ├── RUNBOOK.md
+│       ├── HISTORY.md
 │       └── SUPPORTING_DOCS_MANIFEST.md
 ├── config-center-server/
 │   ├── Dockerfile
@@ -117,12 +116,12 @@ Responsibilities:
 - Use a dedicated watch timeout larger than the server long-poll timeout
 - Refetch and persist configurations after a watch change
 - Call Feature Flag evaluation API
-- Percent-encode configuration, watch, and evaluation query values through URI templates
+- Build configuration, Watch, and evaluation URLs from URI templates. The HTTP transport can encode values a second time, as documented in the [review](项目源文件/UPGRADE_ROADMAP.md#仓库审查).
 - Reject malformed HTTP 200 envelopes before caching or acting on them
 
 Current package: `com.example.democlient`
 
-The package name is legacy naming. Do not rename it as incidental cleanup; handle it only in a dedicated low-risk cleanup task after behavioral stabilization.
+The CLI retains its original package name.
 
 The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file. A present canonical file, including an empty or malformed one, never falls back to legacy data. Before a cache entry may supply an ETag, satisfy a 304 response, or serve transient-failure fallback, its body must be a configuration response with integral `code` equal to `0` and an array `data`; its ETag is used only when nonblank. Writes are serialized within the client instance, written to a same-directory `.tmp` file, and moved over the canonical file atomically when supported; filesystems without atomic move use a completed-temp-file replacement fallback.
 
@@ -381,17 +380,15 @@ Persistence profiles:
 
 MySQL schema baseline:
 
-The MySQL and Compose execution statements below are historical verification records for the repository capability. They do not claim that the adoption checkout has fresh Docker/MySQL runtime evidence; see `docs/project/CURRENT_STATE.md` for the adoption cutoff and actual local outcomes.
+See [current verification](project/CURRENT_STATE.md) for the latest tested environments. Earlier persistence milestones are indexed in the [history](project/HISTORY.md).
 
 - `V1__init_schema.sql` is the immutable initial migration and creates `config_item`, `config_item_history`, `config_namespace_revision`, `feature_flag`, and `feature_flag_history`; `V2__add_history_version_unique_constraints.sql` replaces duplicate four-column history lookup indexes with unique constraints. Flyway owns `flyway_schema_history`.
 - Primary keys use MySQL identity columns. Current-row and namespace uniqueness plus history business-key/version uniqueness and three-column history lookup indexes mirror the JPA annotations.
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
-- Historical verification record: MySQL 8.0.46 was exercised from an empty schema through migration, JPA validation, API writes/history/rollback, and a no-op second startup using a dedicated non-root application account.
-- The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` only for the container-internal listener; `SERVER_BIND_ADDRESS` remains the distinct host-publication control and must be explicitly changed to expose another host interface. Historical verification exercised MySQL 8.4.10 through empty initialization, API write, retained-volume restart, and deleted-volume rebuild.
+- The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` for the container-internal listener. `SERVER_BIND_ADDRESS` controls host publication.
 - The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies Flyway V1/V2 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback including bounded cursor reads, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data.
 - `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
 - GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.
-- Historical verification record: Phase 9E exercised the persistent Compose runtime from an empty named volume through configuration/Feature Flag version 1–3 and rollback, server restart, full Compose restart with data retention, then `down -v` empty-volume rebuild. This is not an adoption-time runtime result and does not authorize resetting the current development volume.
 - The server image is built from the repository root with Maven Wrapper on Maven 3.9.16/JDK 17, then copies only the executable server JAR into a Java 17 JRE image and runs it as a non-root user.
 
 Client defaults:
@@ -405,7 +402,7 @@ Client defaults:
 
 ## 9. Known limits
 
-The stabilization phases are complete. The remaining limits are explicit product boundaries, not claims of implemented functionality:
+The current implementation has these limits.
 
 - Persistent MySQL startup and automated MySQL 8.4 regression are available; the CI coverage intentionally has no multi-version database matrix.
 - The named Docker volume is a development persistence mechanism only; no backup, production upgrade, multi-instance coordination, or external secret management is implemented.
@@ -422,6 +419,7 @@ The stabilization phases are complete. The remaining limits are explicit product
 - `docs/project/PROJECT_BRIEF.md`: stable product boundary and non-goals
 - `docs/project/DECISIONS.md`: durable decisions and rationale
 - `docs/project/CURRENT_STATE.md`: current identity, verification cutoff, risks, and delivery state
+- `docs/project/RUNBOOK.md`: local operation, data boundaries, and recovery
 - `docs/project/SUPPORTING_DOCS_MANIFEST.md`: supporting-asset ownership and currentness
 - `docs/project-map.md`: detailed current architecture and behavior
 - `examples.http`: request examples aligned with current authorization and response behavior

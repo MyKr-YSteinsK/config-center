@@ -6,8 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EtagUtilTest {
 
@@ -20,7 +20,6 @@ class EtagUtilTest {
 
         assertNotEquals(splitOne, splitTwo);
         assertNotEquals(emptyThenNull, nullThenEmpty);
-        assertTrue(splitOne.startsWith("W/\""));
-        assertTrue(splitOne.endsWith("\""));
+        assertEquals("W/\"0e161aa9baccea99ec3fd09974a583e60ba9e9b842cecd9d952203f94ce1c891\"", splitOne);
     }
 }

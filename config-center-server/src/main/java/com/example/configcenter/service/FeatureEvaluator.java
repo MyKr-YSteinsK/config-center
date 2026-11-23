@@ -38,9 +38,21 @@ public class FeatureEvaluator {
      */
     public boolean evaluate(boolean enabled, List<String> allowlist, int rolloutPercentage,
                             String userId, String featureName) {
-        if (!enabled) return false;
-        if (allowlist != null && allowlist.contains(userId)) return true;
-        int bucket = stableBucket(userId, featureName);
-        return bucket < rolloutPercentage;
+        return evaluateWithDetails(enabled, allowlist, rolloutPercentage, userId, featureName).enabled();
     }
+
+    Evaluation evaluateWithDetails(boolean enabled, List<String> allowlist, int rolloutPercentage,
+                                   String userId, String featureName) {
+        if (!enabled) {
+            return new Evaluation(false, -1, "enabled=false（总开关已关闭）");
+        }
+        if (allowlist != null && allowlist.contains(userId)) {
+            return new Evaluation(true, -1, "allowlist 命中");
+        }
+        int bucket = stableBucket(userId, featureName);
+        String decision = "灰度分桶：bucket=" + bucket + ", rollout=" + rolloutPercentage + "%";
+        return new Evaluation(bucket < rolloutPercentage, bucket, decision);
+    }
+
+    record Evaluation(boolean enabled, int bucket, String decision) {}
 }

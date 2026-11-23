@@ -1,43 +1,25 @@
-# Project Brief
+# 项目目标
 
-## Purpose
+`config-center` 展示一个 Java 后端如何安全地写入配置、管理版本、解释灰度结果，以及在并发、回滚和网络失败时维持明确的行为。简历与面试以可重复运行的代码、测试和故障演示作为证据。
 
-`config-center` is a lightweight configuration center and Feature Flag learning project. It gives the project owner a concrete, locally runnable example of configuration versioning, rollback, change observation, Feature Flag evaluation, client reliability, persistence, and testing.
+## 现行范围
 
-The project values technical credibility and incremental learning while remaining understandable to its owner. It is not intended to become an enterprise control plane by default.
+- 一个 Spring Boot 服务端和一个 Java CLI 演示客户端。Java 17、Spring Boot 3、Maven 多模块、主机 loopback 默认值。
+- 本地与自动化快测用 H2，持久化用 MySQL + Flyway。Compose 提供可重建的本地环境。
+- 配置按 `app + env + key` 管理，Feature Flag 按 `app + env + name` 管理。写入使用现有的命名空间 API key。服务提供版本历史、回滚、条件读取、配置 Watch、灰度决策和诊断指标。
 
-## Product boundary
+## 需要保住的行为
 
-- One Spring Boot server and one Java CLI demonstration client.
-- Local-first and single-instance by default.
-- H2 is the zero-dependency local/test path.
-- MySQL plus Flyway is the persistent-runtime path.
-- Docker Compose is a reproducible local persistence path, not a production platform or backup strategy.
-- Lightweight API-key authorization is appropriate to the current local learning boundary.
+- 两类历史均追加写入，回滚使用目标快照产生新业务版本。已有 API 路径、JSON 字段、主要 HTTP 状态及错误码继续兼容。
+- 配置变更事务同时写入当前值、历史和 `app + env` 的 namespace revision。Watch 使用 namespace revision 并在提交后通知，业务版本和 JPA 乐观锁版本各司其职。
+- 历史分页有上限。配置列表和弱 ETag 由同一份有序快照生成。客户端只有验证缓存响应结构后才使用 ETag、304 或瞬时失败回退。
+- MySQL 持久 schema 由追加式 Flyway 迁移管理。应用账户使用最小必要权限，真实凭证、私有配置和本地主库数据单独保管。
+- 调整接口或交互以前先验证原有行为，再用场景与测试证明改造收益。涉及 MySQL 或并发行为空间时采用对应环境的证据。
 
-## Stable priorities
+## 阶段与成功标准
 
-1. Correctness and data/transaction integrity.
-2. API and protocol consistency.
-3. Reproducible tests and local operation.
-4. Explainability and maintainable, small changes.
-5. Security appropriate to the actual deployment boundary.
-6. New capabilities only after the existing behavior is understood and stable.
+当前阶段是维护接管与小范围兼容性重构。使用 [运行手册](RUNBOOK.md) 从干净检出恢复，执行两个模块的验证，并能在本机演示写入、读取、灰度、回滚与客户端行为。 [当前状态](CURRENT_STATE.md) 记录实际运行证据。
 
-## Invariants
+下一阶段的价值集中在可靠变更、真实 Java 消费者和可操作的界面。前端管理页、SDK、跨项目联动、发布流程、账号权限体系和分布式能力均由用户按 [升级提案](../项目源文件/UPGRADE_ROADMAP.md) 选择。单实例基线足以作为这些建议的比较起点，云平台与企业级控制平面属于独立范围。
 
-- Configuration and Feature Flag history is append-only; rollback creates a new current/business version.
-- Per-item business versions remain distinct from the persistent `app + env` namespace revision used by Watch.
-- Successful configuration writes advance the namespace revision transactionally, and Watch visibility is post-commit.
-- History reads remain bounded and cursor-based.
-- Persisted client cache is untrusted input and must pass response-shape validation before it supplies an ETag, 304 body, or transient-failure fallback.
-- Persistent schema evolution uses immutable, append-only Flyway migrations.
-- Local defaults remain loopback-oriented, and real credentials remain outside Git.
-
-## Non-goals
-
-No default expansion to microservices, message queues, Kubernetes, Redis or other external coordination, multi-tenancy, complex RBAC/JWT/account management, frontend administration, distributed Watch/rate limiting, production backup/recovery, or production release infrastructure. DELETE/tombstone semantics, SDK extraction, and other future ideas require a separate product decision.
-
-## Related canonical documents
-
-See `docs/project/DECISIONS.md` for durable choices, `docs/project/CURRENT_STATE.md` for the current evidence snapshot, `docs/project/SUPPORTING_DOCS_MANIFEST.md` for supporting-document ownership, and `docs/project-map.md` for detailed architecture.
+长期理由见 [决定记录](DECISIONS.md)，具体行为见 [架构地图](../project-map.md)。
