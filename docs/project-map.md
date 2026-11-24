@@ -45,6 +45,7 @@ config-center/
 │       ├── PROJECT_BRIEF.md
 │       ├── DECISIONS.md
 │       ├── CURRENT_STATE.md
+│       ├── IDENTITY_MIGRATION.md
 │       ├── RUNBOOK.md
 │       ├── HISTORY.md
 │       └── SUPPORTING_DOCS_MANIFEST.md
@@ -60,8 +61,10 @@ config-center/
 │       │   │   ├── dto/
 │       │   │   ├── exception/
 │       │   │   ├── metrics/
+│       │   │   ├── migration/
 │       │   │   ├── repository/
 │       │   │   ├── service/
+│       │   │   ├── validation/
 │       │   │   └── web/
 │       │   └── resources/
 │       │       ├── application.yml
@@ -71,6 +74,7 @@ config-center/
 │       │       ├── db/migration/V2__add_history_version_unique_constraints.sql
 │       │       └── db/migration/V3__widen_rollback_history_reasons.sql
 │       └── test/
+│           ├── fixtures/identity_upgrade.py
 │           ├── java/com/example/configcenter/MysqlPersistenceIT.java
 │           └── resources/
 │               ├── application.properties
@@ -126,7 +130,7 @@ Current package: `com.example.democlient`
 
 The CLI retains its original package name.
 
-The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file. A present canonical file, including an empty or malformed one, never falls back to legacy data. Before a cache entry may supply an ETag, satisfy a 304 response, or serve transient-failure fallback, its body must be a configuration response with integral `code` equal to `0` and an array `data`; its ETag is sent only when it represents a single concrete entity tag. Writes are serialized within the client instance, written to a same-directory `.tmp` file, and moved over the canonical file atomically when supported; filesystems without atomic move use a completed-temp-file replacement fallback.
+The client uses `.config-center-client-cache-exact-v1.json` in the user home directory. An initial request for each exact URL obtains a valid 200 before it can send a cached validator or use a transient-failure fallback. The two earlier cache generations remain on disk and outside the current lookup path, including when the new file is empty or malformed. Cached responses must have integral `code` equal to `0` and an array `data`. An ETag is sent only when it represents a single concrete entity tag. Writes are serialized within the client instance and replace the file via a completed temporary file in the same directory. Replacement is atomic when the filesystem supports it.
 
 ## 4. Server architecture
 
@@ -185,9 +189,8 @@ Entity: `ConfigItemHistory`
 
 Behavior:
 
-- Append a snapshot after upsert
-- Append a new snapshot after rollback
-- Do not mutate old history records
+- Append one snapshot after upsert or rollback, with the current row's ID as `owner_id`.
+- Keep old timestamps, payloads and spellings as recorded. `owner_id, version` uniquely identifies a snapshot.
 
 ### Configuration namespace revision
 
@@ -228,11 +231,11 @@ The allowlist is currently stored as JSON in one column. API validation bounds i
 
 Entity: `FeatureFlagHistory`
 
-Behavior mirrors configuration history.
+Behavior mirrors configuration history. The `owner_id` refers to a current Feature Flag ID.
 
 ### History read contract
 
-`GET /api/configs/history` and `GET /api/features/history` query history rows in descending business-version order through repository-level pagination. They keep the `ApiResponse<List<...>>` envelope and accept `limit` (default `50`, range `1..200`) plus an optional positive, exclusive `beforeVersion` cursor. A caller obtains the next page by passing the smallest `version` from the previous page; an omitted cursor reads only the newest 50 snapshots, not the complete history.
+`GET /api/configs/history` and `GET /api/features/history` find the current object's ID through its exact identity and page its snapshots in descending business-version order. Rollback uses the same owner lookup. Returned historical fields preserve the original spelling and are usable as audit evidence. The endpoints keep the `ApiResponse<List<...>>` envelope and accept `limit` (default `50`, range `1..200`) plus an optional positive, exclusive `beforeVersion` cursor. For the next page, pass the smallest `version` from the previous page.
 
 ## 6. Public API map
 
@@ -304,7 +307,7 @@ request
 
 Configuration and Feature Flag upsert/rollback endpoints use the same lightweight API Key mapping from key to authorized `app/env`. Missing or unauthorized keys return HTTP 403/code `4031`; list, history, watch, and Feature Flag evaluation remain unauthenticated. API Key entries require non-blank key/app/env values, with app/env lengths matching request boundaries. Local and test use the development fallback unless overridden through `CONFIG_CENTER_API_KEY`; the MySQL profile requires a nonblank explicit `CONFIG_CENTER_API_KEY` and does not inherit that fallback.
 
-The `app/env` authorization comparison and JVM Watch key use exact Java strings. The MySQL business columns use `utf8mb4_unicode_ci`. In the measured cases, separate authorized spellings shared the same persisted rows, while a pending Watch on the other spelling timed out and saw the update on its next request. The evaluator hashes the requested feature name, so SQL-equal flag names can yield different buckets for one user. [Identity matrix and design choices](project/WRITE_CONSISTENCY.md#名称比较的实测矩阵)
+Java authorization, revision locks, Watch keys and both persistence profiles use exact app/env equality. The current objects and revision in MySQL use `utf8mb4_0900_bin` on identity columns. Leading and trailing spaces, case, accents and Unicode composition can distinguish objects. HTTP identities and configured grant scopes require valid Unicode. Other business columns keep their previous comparison semantics. [Exact identity and V4 migration](project/IDENTITY_MIGRATION.md)
 
 ### Feature evaluation
 
@@ -314,6 +317,8 @@ Rule order:
 2. user is in allowlist -> true
 3. stable bucket is lower than rollout percentage -> true
 4. otherwise -> false
+
+The hash input is `userId + ":" + featureName`. An evaluation resolves the exact current flag first, preserving the bucket for the same user and flag name. Another spelling can have its own bucket after it is created.
 
 ### ETag fetch
 
@@ -408,11 +413,12 @@ MySQL schema baseline:
 
 See [current verification](project/CURRENT_STATE.md) for the latest tested environments. Earlier persistence milestones are indexed in the [history](project/HISTORY.md).
 
-- `V1__init_schema.sql` is the immutable initial migration and creates `config_item`, `config_item_history`, `config_namespace_revision`, `feature_flag`, and `feature_flag_history`; `V2__add_history_version_unique_constraints.sql` replaces duplicate four-column history lookup indexes with unique constraints. V3 widens both history reason columns to VARCHAR(600) NULL. Flyway owns `flyway_schema_history`.
-- Primary keys use MySQL identity columns. Current-row and namespace uniqueness plus history business-key/version uniqueness and three-column history lookup indexes mirror the JPA annotations.
+- V1 creates the five business tables. V2 adds the original history-version unique indexes and V3 widens both history reason columns to `VARCHAR(600) NULL`. Flyway owns `flyway_schema_history`.
+- V4 first checks the five tables and configured grants under the V3 comparison rules. It backfills `owner_id` in both history tables and gives them `UNIQUE(owner_id, version)` lookup indexes. Only current identity and revision identity columns switch to `utf8mb4_0900_bin`. Original history fields and unaffected column definitions remain intact. Ambiguous scope changes require an approved mapping. MySQL DDL can leave partial changes on failure, so the recovery path uses a separate V3 restore. [Migration contract](project/IDENTITY_MIGRATION.md)
+- Primary keys use MySQL identity columns. Current-row and namespace composite uniqueness and history owner/version uniqueness mirror the JPA annotations.
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
 - The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` for the container-internal listener. `SERVER_BIND_ADDRESS` controls host publication.
-- The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies V1–V3 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback including bounded cursor reads, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data. The subsequent `MysqlV2UpgradeIT` rebuilds only the disposable application tables and Flyway history, migrates to V2, seeds both domains and revision, applies V3, compares rows, indexes and checksums, then exercises a 533-unit reason through both rollback services after Hibernate validates the upgraded schema.
+- The `mysql-it` Maven profile uses Failsafe and the dedicated `config_center_it` schema. `MysqlPersistenceIT` verifies fresh V1–V4, repeat migration, schema validation and persisted behavior. `MysqlV2UpgradeIT` checks populated V2→V3→V4 in stages, including the original rows, checksums and 533-unit rollback reasons. `MysqlV4MigrationIT` covers mixed V3 groups and fail-closed preflight. Name identity and write consistency suites exercise real HTTP and independent SQL.
 - `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
 - GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.
 - The server image is built from the repository root with Maven Wrapper on Maven 3.9.16/JDK 17, then copies only the executable server JAR into a Java 17 JRE image and runs it as a non-root user.
@@ -425,14 +431,14 @@ Client defaults:
 - Watch recovery scheduling window `30 s` and retry interval `1000 ms`
 - Retry policy: 3 attempts with exponential backoff and jitter
 - Circuit breaker: open after 2 recorded failures for 5 seconds
-- Canonical cache `${user.home}/.config-center-client-cache.json`
+- Current cache `${user.home}/.config-center-client-cache-exact-v1.json`
 
 ## 9. Known limits
 
 The current implementation has these limits.
 
 - Persistent MySQL startup and automated MySQL 8.4 regression are available; the CI coverage intentionally has no multi-version database matrix.
-- The named Docker volume is a development persistence mechanism only; no backup, production upgrade, multi-instance coordination, or external secret management is implemented.
+- The named Docker volume stores development data. V4 upgrade rehearsals use isolated backups and restores. Production or mixed-version operation needs a separate decision.
 - The local API Key model is plaintext configuration for learning use and has no accounts, roles, JWT, or tenant model.
 - Rate-limit buckets and long-poll waiters are process-local and do not coordinate across server instances.
 - The client is a CLI demonstration rather than a published SDK; its package remains `com.example.democlient`.
@@ -447,9 +453,10 @@ The current implementation has these limits.
 - `docs/project/DECISIONS.md`: durable decisions and rationale
 - `docs/project/CURRENT_STATE.md`: current identity, verification cutoff, risks, and delivery state
 - `docs/project/RUNBOOK.md`: local operation, data boundaries, and recovery
+- `docs/project/IDENTITY_MIGRATION.md`: exact names and migration behavior
 - `docs/project/SUPPORTING_DOCS_MANIFEST.md`: supporting-asset ownership and currentness
 - `docs/project-map.md`: detailed current architecture and behavior
 - `examples.http`: request examples aligned with current authorization and response behavior
-- `config-center-server/src/main/resources/db/migration/`: append-only Flyway schema history
+- `config-center-server/src/main/resources/db/migration/` and the server `migration` package: append-only Flyway schema history
 
 When code changes any architecture or behavior described here, update this file in the same patch. Do not use this file as a per-task progress log.

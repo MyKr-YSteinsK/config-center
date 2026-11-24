@@ -2,7 +2,11 @@
 
 两个人同时保存时，可以用最后读到的值、历史和 revision 核对实际成功的写入。连接中断时，也可以查到想要的效果是否曾经出现。现有历史描述每次保存的内容，精确归因需要服务端持久化的请求身份。
 
-## 真实 MySQL 交错
+## V4 的精确名称与并发
+
+Config-Plan06 统一了数据库与 Java 的精确名称。不同 app/env 拼写各有当前行、历史和 revision。并发首次写入仍可能遇到 InnoDB 锁冲突。V4 受控交错检查两笔成功或被回滚的一笔返回 409/4091，随后用原精确权限补写，最终各有一条 v1、revision 1，且等待者只接到自身 scope 的通知。原同版本、同键首写、多键、upsert/rollback 和 flush 之后的通知回归继续执行。下面保留 V3 的实测对照。[V4 迁移合同](IDENTITY_MIGRATION.md) · [本轮验证](CURRENT_STATE.md)
+
+## V3 真实 MySQL 交错
 
 Config-Plan05 的基线为 `eb84b51`。使用本机 MySQL 8.0.46、InnoDB `REPEATABLE-READ`、专用非 root 账户与独占 `config_center_it`，客户端直连 Spring Boot 随机 loopback 端口。仅演练关闭限流。测试屏障保留真实 JPA 查询、事务和 MySQL 约束。每对请求记录不同的 `CONNECTION_ID()`，无自动重试。测试会话的 `innodb_lock_wait_timeout` 为 6 秒，屏障与 HTTP 等待均有上限。[任务与验收](https://github.com/MyKr-YSteinsK/config-center/issues/4)
 
@@ -17,7 +21,7 @@ Config-Plan05 的基线为 `eb84b51`。使用本机 MySQL 8.0.46、InnoDB `REPEA
 
 普通同版本、同键首写、同 namespace 多键和 upsert/rollback 场景均未触发死锁或锁等待超时。同名竞争的败方产生 1062，别名首行场景单独复现了 1213。修复位于 HTTP 异常映射，事务由原边界整体回滚。结论适用于测试中实际发生的交错。
 
-## 名称比较的实测矩阵
+## V3 名称比较的实测矩阵
 
 MySQL 五张业务表的 `app`、`env`、`config_key` 和 `name` 使用 `utf8mb4_unicode_ci`。逐行对照实际表列的 SQL 等值查询、HTTP 当前记录或评估、历史和 revision。以下以 `plan05-cafe/dev` 下的 `cafe` 为基准，H2 为 2.3.232 的项目测试 profile。
 
@@ -33,14 +37,14 @@ MySQL 五张业务表的 `app`、`env`、`config_key` 和 `name` 使用 `utf8mb4
 - **等待与下一次读。** 精确拼写的控制组收到 `changed=true, latestVersion=2`，独立 scope 正常超时于 0。原拼写 Watch 已在服务器挂起时，以获授权的另一拼写写入。MySQL 的 revision 到 3，该 Watch 带原 trace 超时返回 `changed=false, latestVersion=2`，下一次轮询立即返回 3，列表读回 `alias-write`。H2 上别名写入自己的 revision 1，原拼写两次都保持 2。复现覆盖大小写变体的实际等待路径，重音与尾空格的结果来自身份查询和评估矩阵。
 - **灰度取样。** 同一个 MySQL 开关上，`plan05-user-6` 在 50% 灰度时查询 `cafe`、`Cafe`、`café`、`cafe␠`，结果依次为 bucket 3/开启、68/关闭、4/开启、58/关闭。仅改变 app 拼写且保持请求 name，会得到原 bucket。总开关关闭和 allowlist 命中的优先级在真实请求中均验证。H2 上未写入的别名为 404。
 
-### 名称身份的两条待决路线
+### Plan05 审查过的身份路线
 
 | 路线 | 取舍与需要验证的条件 |
 | --- | --- |
 | 保持数据库等值规则，使用数据库解析出的稳定身份 | 已有等价读写可继续定位原记录。先决定精确授权与共用数据的关系，再把 revision 首行、事务锁、Watch 和灰度输入绑到持久稳定的 scope/flag 身份。沿唯一约束原子建立首行，处理两个请求首次解析都缺行的情况。需测试存量拼写、两个授权键、分桶影响与热点查询/锁开销。 |
 | 采用精确标识并迁移 | JVM 与持久层可共享精确比较。需要明确 Unicode、尾空格和历史保留策略，选择相应的排序规则或精确索引。先盘点客户端别名与混合拼写历史，按原业务对象迁移关联，避免当前行、历史和 revision 迁成彼此独立的对象。需要索引重建、兼容期、授权和灰度迁移及旧库演练。 |
 
-建议先由所有者决定两个拼写在业务上是否属于同一 scope。若要维持现有消费者的等值行为，优先验证第一条路线的稳定身份和授权边界。若拼写本来应隔离，先定义精确标识及旧数据归属。小写化、去空格无法复现本次实测的 MySQL 等值关系。两条路线的正式采用、API key 比较和灰度迁移均等待决定。
+小写化、去空格无法复现当时实测的 MySQL 等值关系。所有者在 Config-Plan06 选择第二条路线。迁移预检仍用原数据库的 SQL 等值关系盘点旧组，由所有者决定混合 scope 的归属。[Config-Plan06](https://github.com/MyKr-YSteinsK/config-center/issues/5) · [V4 迁移步骤](IDENTITY_MIGRATION.md)
 
 ## 丢失写入响应时如何核对
 

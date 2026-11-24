@@ -29,10 +29,82 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 | 持久 MySQL | 默认 Compose 项目把数据放在 `config-center_mysql-data`，手工 MySQL 则使用用户指定的实例。应用使用专用非 root 账户，Flyway 迁移后由 Hibernate validate。需要跨机保留时，通过私有备份渠道导出和恢复数据库。 |
 | MySQL 测试 | 使用专用 `config_center_it`。Compose 路径用 `compose.mysql-it.yml` 隔离项目和卷，loopback 端口默认 `33306`；独立 MySQL 可使用专用数据目录、loopback 端口和非 root 测试账户。验证前核对实际 URL 与项目名，保持主库数据卷完整。 |
 | 本地配置 | 从 [模板](../../.env.example) 创建缺失的 `.env`，实际密码和 API key 通过私有方式恢复。手工运行 MySQL JAR 另外设置 README 列出的必需环境变量。 |
-| 客户端缓存 | `${user.home}/.config-center-client-cache.json`，兼容旧 `.config-center-demo-client-cache.json`。缓存是派生数据且可能含配置明文，正常从服务重新生成。 |
+| 客户端缓存 | `${user.home}/.config-center-client-cache-exact-v1.json`。旧两代文件独立保留，详情见本页客户端切换。缓存可能含配置明文。 |
 | IDE 和构建输出 | `.idea/`、`target/`、Maven 用户缓存位于本地。接管前废旧工作区材料的去向见 [历史整理](HISTORY.md)。 |
 
 直接运行 JAR 由 `SERVER_ADDRESS` 控制监听，默认 `127.0.0.1`。持久 Compose 的 `0.0.0.0` 只在容器内监听，主机侧由 `SERVER_BIND_ADDRESS` 控制并默认为 loopback。Swagger、H2 Console、Actuator 以及实验用 API key 在这个边界内使用。
+
+## Config-Plan06 精确名称与迁移
+
+升级后，客户端应使用为对象选定的精确名字。旧历史里的拼写继续可见。先在隔离副本确定归属，再用匹配的构建切换。完整规则、映射格式、DDL 与恢复边界见 [精确名称与 V4 迁移](IDENTITY_MIGRATION.md)。
+
+### 检查 V3 副本及正常启动
+
+使用 JDK 17、MySQL 8.0.17+、utf8mb4 连接。核对隔离实例与 `config_center_it`，使用专用非 root 帐户。沿用 README 的 MySQL 连接环境变量与授权配置。关停连接该库的旧实例及其他写入者。先保存升级前备份，并验证能恢复到另一个独立实例。
+
+```powershell
+.\mvnw.cmd -q -B clean verify
+$jar = 'config-center-server/target/config-center-server-1.0.0.jar'
+java -jar $jar --spring.profiles.active=mysql --check-identity-migration
+```
+
+有多个可能归属时，输出 `IDENTITY_V4_GROUP` 和明确拒绝信息。检查命令不修改表或 Flyway 历史。如果需要映射，按报告填写合成或私下批准的映射文件。使用相同的有效授权配置复查，然后在这个隔离副本启动。
+
+```powershell
+$mapping = 'D:\path\to\approved-private-map.json'
+java -jar $jar --spring.profiles.active=mysql --check-identity-migration "--config-center.identity-mapping-file=$mapping"
+java -jar $jar --spring.profiles.active=mysql "--config-center.identity-mapping-file=$mapping"
+```
+
+`IDENTITY_V4_READY (read only)` 表示映射与检查快照一致。无歧义旧库正常启动可自动迁移，空库会顺序应用 V1–V4。成功后确认 Flyway V4、Hibernate validate、精确读取、历史和 Watch。迁移文件只在执行 V4 时读取，归档检查和审批证据后常规重启可省略映射。生产启动保持既有 loopback 和 API 设置。
+
+### 合成演练和失败恢复
+
+先在仓库根构建本轮包。旧包从本次审查基线重建，产物放本机忽略区。Windows 使用以下命令。在 PATH 准备 `mysqld`、`mysql`、`mysqladmin`、`mysqldump` 与 Python 3。
+
+```powershell
+.\mvnw.cmd -q -B clean verify
+$baseline = (New-Item -ItemType Directory -Force "docs/delete/v3-$([guid]::NewGuid())").FullName
+git archive --format=zip -o "$baseline/src.zip" 52e887daab5881974ec7d9bf06a707d2110fb378 -- .mvn mvnw mvnw.cmd pom.xml config-center-server config-center-client
+Expand-Archive -LiteralPath "$baseline/src.zip" -DestinationPath "$baseline/src"
+Push-Location "$baseline/src"
+try { .\mvnw.cmd -q -B -DskipTests package } finally { Pop-Location }
+python -B config-center-server/src/test/fixtures/identity_upgrade.py --baseline-jar "$baseline/src/config-center-server/target/config-center-server-1.0.0.jar"
+```
+
+脚本使用不同随机 loopback 端口、各自的数据目录和一次性非 root 账户。它会生成合成 V3、逐项读回、导出逻辑备份、验证缺映射拒绝及部分 DDL 后启动失败，然后将备份恢复到另一隔离实例，运行旧 JAR 和本轮 JAR。预期看到旧表未改时的预检拒绝、第一条 DDL 已提交的权限故障、V3 恢复可用、V4 后独立的 v1 与旧历史、各自的 Watch 和真实 CLI 200/304。证据位于 `docs/delete/Config-Plan06/`。Failsafe 中的空库、V2→V3→V4 和异常归属检查可使用另一个独占 `config_center_it` 重现。
+
+```powershell
+.\mvnw.cmd -q -B -Pmysql-it verify
+Get-Content config-center-server/target/failsafe-reports/*Mysql*IT.txt
+Get-FileHash -Algorithm SHA256 config-center-server/target/config-center-server-1.0.0.jar
+```
+
+恢复时保留现有失败实例和日志供比对。检查失败库实际的 Flyway 状态和 owner 列，该命令用失败库单独的客户端配置，只做查询。
+
+```powershell
+mysql.exe "--defaults-extra-file=$failedOptions" --database=config_center_it --execute="SELECT version, success FROM flyway_schema_history ORDER BY installed_rank; SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND COLUMN_NAME='owner_id';"
+```
+
+从升级前备份导入一个空的独立 V3 副本。手工演练可用下列命令，`$sourceOptions` 与 `$restoreOptions` 分别指向私有 MySQL 客户端配置文件（`[client]` 节）。先核对两份配置指向不同的 loopback 端口，两个实例中的授权、catalog 以及恢复目标为空。备份的数据库名为 `config_center_it`。
+
+```powershell
+$dumpDir = (New-Item -ItemType Directory -Force 'docs/delete').FullName
+$dump = Join-Path $dumpDir "v3-backup-$([guid]::NewGuid()).sql"
+mysqldump.exe "--defaults-extra-file=$sourceOptions" --single-transaction --no-tablespaces --set-gtid-purged=OFF --skip-lock-tables --skip-add-drop-table "--result-file=$dump" config_center_it
+if ($LASTEXITCODE -ne 0) { throw '备份失败' }
+Get-FileHash -Algorithm SHA256 -LiteralPath $dump
+mysql.exe "--defaults-extra-file=$restoreOptions" --database=config_center_it "--execute=source $($dump.Replace('\','/'))"
+if ($LASTEXITCODE -ne 0) { throw '恢复失败' }
+```
+
+先核对恢复库的五张表、约束及 V1–V3 的 Flyway 记录，再用旧 JAR 读回历史。复跑 V4 时只在这个已验证副本重做预检。以上 Python 演练会自动核对并执行整套流程。
+
+### 客户端切换
+
+1. 稳定 V4 后再启用新 CLI。先核对目标精确 `app/env` 和要评估的 flag name，把仍用旧别名的调用方切换到已批准的名字。
+2. 保留或私下归档用户目录中的 `.config-center-client-cache.json` 与 `.config-center-demo-client-cache.json`。新 CLI 使用独立的 `.config-center-client-cache-exact-v1.json`，会忽略这两个旧文件，首次有效 200 写入新文件，后续才使用新 ETag 和回退缓存。
+3. 从新 CLI 输出确认初始读取的 `source=http-200`、实际配置与 scope，并在第二次读取观察合法 `etag-304`。新 CLI 连到旧服务端时仍会得到旧比较结果。若误用旧服务端填充了新文件，切换前把这份新文件也隔离。旧 CLI 的离线缓存只能在客户端停止或归档。
 
 ## Config-Plan05 并发与结果读回
 
@@ -48,7 +120,7 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 Get-Content config-center-server/target/failsafe-reports/com.example.configcenter.Mysql*IT.txt
 ```
 
-两类写入在 `MysqlWriteConsistencyIT` 中经真实 HTTP 和不同数据库连接交错。测试输出 `Plan05 concurrent checkpoint`、连接号、隔离级别及 HTTP 状态。`MysqlNameIdentityIT` 与 `H2NameIdentityTest` 输出 `Plan05 matrix`，对照各引擎按真实表列查询的结果。复现包含已挂起 Watch、确实不等的 scope、大小写/重音/空格与灰度的变化。关键结果见 [写入证据](WRITE_CONSISTENCY.md)。
+两类写入在 `MysqlWriteConsistencyIT` 中经真实 HTTP 和不同数据库连接交错。测试输出连接号、隔离级别及 HTTP 状态。现行 `MysqlNameIdentityIT` 与 `H2NameIdentityTest` 检查 V4 精确合同。要重复 V3 等值对照，按上文的 `git archive` 方式从 `52e887d` 提取旧源码，在另一份隔离测试库运行该版本的测试。关键结果见 [写入证据](WRITE_CONSISTENCY.md)。
 
 ### 实包响应丢失
 
@@ -158,7 +230,7 @@ $demoCache = (New-Item -ItemType Directory -Force "docs/delete/cli-$([guid]::New
 
 ## V3 升级与构建回退
 
-先确认测试连接指向专用 `config_center_it`；整段测试期间由一个运行独占此库。按 [README 的 MySQL 测试步骤](../../README.md) 准备空测试实例和凭证，再执行以下命令。Failsafe 串行运行 `MysqlPersistenceIT` 和 `MysqlV2UpgradeIT`。后者确认数据库名和认证账户后重建五张业务表及 `flyway_schema_history`，只应用 V1/V2，写入旧数据，再升级和验证；结束时为 V3，保留合成样本。主 Compose 实例不参与。
+本节记录 Plan03 在 V3 上验证过的旧构建回退。要重现该历史结论，从 `1060563` 的源码运行下面的测试，并使用独占的 `config_center_it`。现行测试会在验证 V3 后继续迁移到 V4。V4 构建回退见 [V4 恢复步骤](#合成演练和失败恢复)。主 Compose 实例不参与。
 
 ```powershell
 .\mvnw.cmd -q -B -Pmysql-it verify
@@ -178,7 +250,7 @@ try { .\mvnw.cmd -q -B -DskipTests package } finally { Pop-Location }
 java -jar "$old/src/config-center-server/target/config-center-server-1.0.0.jar" --spring.profiles.active=mysql --server.address=127.0.0.1
 ```
 
-旧包在本机 MySQL 8.0.46 上记录 schema 3 高于内置迁移 2 的警告，Flyway 与 Hibernate 随后完成启动。用前述两个 history GET 均读到 `3,2,1` 及完整原因；用两个 `Write-Demo` rollback 再提交满长原因，均生成 v4。此结论限 `b546f7b` 与当前 MySQL profile；切回该构建也会恢复其条件请求行为，旧 CLI 仍有查询编码缺陷。若必须恢复 V2 数据库，在独立实例还原升级前备份并核对数据。直接缩列可能破坏 V3 已写入的长原因；应用回退无需缩列或更改 Flyway 历史。
+旧包在本机 MySQL 8.0.46 上记录 schema 3 高于内置迁移 2 的警告，Flyway 与 Hibernate 随后完成启动。两个 history GET 均读到 `3,2,1` 及完整原因。再用两个 `Write-Demo` rollback 提交满长原因，均生成业务版本 v4。此结论限 `b546f7b` 与 V3 schema。切回该构建也会恢复旧条件请求行为，旧 CLI 仍有查询编码缺陷。若必须恢复 V2 数据库，在独立实例还原升级前备份并核对数据。直接缩列可能破坏 V3 已写入的长原因。
 
 ## 换机和排障
 

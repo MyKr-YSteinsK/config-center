@@ -36,7 +36,7 @@ flowchart LR
 - JDK 17
 - Internet access on the first wrapper run so Maven 3.9.16 can be downloaded
 - Docker Desktop with Docker Compose only for the persistent startup path
-- MySQL 8.0 or later only when running the manually managed persistent profile
+- MySQL 8.0.17 or later with `utf8mb4_0900_bin` when running the manually managed persistent profile
 
 Windows PowerShell:
 
@@ -101,7 +101,9 @@ docker compose logs --no-color config-center-server
 docker compose logs --no-color mysql
 ```
 
-`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume; use it only when an intentional reset of local development data is authorized. The next startup creates an empty database and reapplies all Flyway migrations, currently V1 through V3.
+`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume. Use it only for an authorized reset of development data. A fresh volume applies Flyway V1 through V4.
+
+For an existing V3 volume, stop all writers before starting the V4 server. Back up the database, verify a restore on a separate instance, and run the read-only preflight with the effective write grants. If names have ambiguous owners, the check reports the groups and stops. [V4 upgrade, mapping, and recovery](docs/project/RUNBOOK.md#config-plan06-精确名称与迁移)
 
 For a manually managed empty MySQL database, grant a dedicated non-root account access to the schema, set the required values, and select `mysql`:
 
@@ -113,9 +115,9 @@ $env:CONFIG_CENTER_API_KEY = "replace-with-local-api-key"
 java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
 ```
 
-On MySQL, Flyway creates the V1 schema, applies V2 history-version uniqueness constraints and widens both history reason columns in V3. Hibernate then validates the schema. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY`.
+On MySQL, Flyway applies V1 through V4 before Hibernate validates the schema. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY`.
 
-Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline; `V2__add_history_version_unique_constraints.sql` makes each history business key and version unique. `V3__widen_rollback_history_reasons.sql` widens both nullable history reasons to `VARCHAR(600)`. Start future migrations at V4 and preserve all applied scripts. Confirm the applied/unchanged migration from the server log:
+V1 creates the schema, V2 adds history-version uniqueness, and V3 widens the nullable history reasons to `VARCHAR(600)`. The Java V4 migration switches current object and revision identities to `utf8mb4_0900_bin` and links history to the current row ID. It keeps the original history fields. Preserve V1 through V4 and append future migrations from V5. Check the server log for the applied schema version.
 
 ```powershell
 docker compose logs --no-color config-center-server | Select-String "Migrating schema|up to date"
@@ -135,7 +137,7 @@ $env:CONFIG_CENTER_API_KEY = "replace-with-MYSQL_API_KEY"
 docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml down -v
 ```
 
-The `mysql-it` profile exclusively uses the disposable `config_center_it` schema. Failsafe runs persistence checks and a populated V2-to-V3 upgrade. The upgrade fixture rebuilds the five application tables and Flyway history. See the [upgrade and build rollback procedure](docs/project/RUNBOOK.md#v3-升级与构建回退). The normal `clean verify` remains H2-only and does not require Docker.
+The `mysql-it` profile uses the disposable `config_center_it` schema. Failsafe covers fresh installation, populated V2-to-V4 upgrade, mixed-name V3 migration, exact identity, and concurrent writes. Upgrade fixtures rebuild the five application tables and Flyway history in the test schema. The normal `clean verify` uses H2 and requires no Docker. [MySQL test and V4 rehearsal commands](docs/project/RUNBOOK.md#config-plan06-精确名称与迁移)
 
 ## Local walkthrough
 
@@ -220,7 +222,9 @@ After seeding the configuration and Feature Flag above, run the client once with
 .\mvnw.cmd -q -B -pl config-center-client spring-boot:run '-Dspring-boot.run.arguments=--demo.watch.enabled=false'
 ```
 
-Remove the argument to use the configured five Watch rounds. A normal no-change poll or a completed configuration confirmation finishes one round. Each round can recover from temporary failures, including the last one. The final `cacheHit` and `etag304` counts include the initial read, verified 304 responses and stale fallbacks during Watch. The client cache is stored at `${user.home}/.config-center-client-cache.json`; an existing legacy `.config-center-demo-client-cache.json` is migrated without being deleted only when the canonical file is absent. A present empty or malformed canonical cache does not revive legacy data.
+Remove the argument to use the configured five Watch rounds. A normal no-change poll or a completed configuration confirmation finishes one round. Each round can recover from temporary failures, including the last one. The final `cacheHit` and `etag304` counts include the initial read, verified 304 responses and stale fallbacks during Watch.
+
+The client reads and writes `${user.home}/.config-center-client-cache-exact-v1.json`. Both earlier files, `.config-center-client-cache.json` and `.config-center-demo-client-cache.json`, stay on disk. The first request in the new cache generation has no validator and requires an online 200. Confirm that 200 comes from the V4 server for the approved exact name before relying on cached reads. [CLI cutover](docs/project/RUNBOOK.md#config-plan06-精确名称与迁移)
 
 The client retries 5xx and network failures and may use a structurally valid cached configuration only after those transient attempts are exhausted. A cache entry is valid only when its body is a configuration response with integral `code: 0` and array `data`; malformed entries neither send an ETag nor satisfy a 304 response or fallback. HTTP 4xx responses, including 429, neither retry nor open the availability circuit breaker and never return stale cache as success; requests rejected by an already-open breaker also do not fall back.
 
@@ -240,7 +244,7 @@ If two writes start from the same version, the losing write returns HTTP 409. Re
 
 A lost connection after saving leaves the result uncertain. Use a new connection to read the current value and history. History can show that the intended value was saved even when a later write replaced it. Attributing that saved value to one request requires a durable request identity.
 
-The MySQL name comparison can match case, accent and trailing-space variants that the exact Java authorization and Watch keys treat as different. This can delay a waiting Watch until its next poll and can change rollout buckets when the requested flag name changes. [MySQL and H2 evidence and pending decisions](docs/project/WRITE_CONSISTENCY.md) · [Reproduce the concurrency and lost-response scenarios](docs/project/RUNBOOK.md#config-plan05-并发与结果读回)
+Exact namespaces have separate revisions and Watch waiters. InnoDB may still abort one of two concurrent inserts. The aborted write returns 409 and leaves no partial state. [MySQL concurrency and V3 comparison](docs/project/WRITE_CONSISTENCY.md) · [Reproduce the concurrency and lost-response scenarios](docs/project/RUNBOOK.md#config-plan05-并发与结果读回)
 
 ## Public API
 
@@ -261,9 +265,13 @@ The MySQL name comparison can match case, accent and trailing-space variants tha
 
 All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching entity tags and a standalone `If-None-Match: *` return HTTP 304 with ETag, trace ID and an empty body for both empty and populated configuration lists. See `examples.http` for ready-to-run requests.
 
+Both databases compare `app`, `env`, configuration keys and flag names exactly, including case, accents, leading and trailing spaces and Unicode composition. Use the exact spelling for writes, reads and Watch. An absent spelling has an empty list and revision 0 or a 404 for an individual lookup or evaluation. Authorized writes apply to the configured exact scope. Local reads retain their existing access rules. The rollout bucket remains stable for the current flag's exact name and user ID.
+
 History reads return newest business versions first and keep the existing list response envelope. Both history endpoints default to the newest 50 snapshots; `limit` accepts `1..200`, and an optional positive `beforeVersion` is an exclusive business-version cursor. To read the next page, use the smallest `version` from the current page as `beforeVersion`. Calls that previously omitted pagination now receive at most 50 snapshots rather than the complete history.
 
-Configuration-list data and its weak ETag are generated from one ordered in-memory snapshot. The hash uses an unambiguous length-prefixed encoding of every response item field, so reset business versions cannot hide changed values or descriptions.
+History and rollback use the precise current object's ID. A migrated history entry may show its original spelling for audit. Use the current exact name to query or roll back that entry.
+
+Configuration-list data and its weak ETag come from one ordered in-memory snapshot. Database sort orders can differ. The hash encodes the length and value of each response item field, so reset business versions cannot hide changed values or descriptions.
 
 Configuration watch requires `sinceVersion >= 0` and `timeoutSeconds` within `1..60`. Each completed long-poll response preserves its own request trace ID in both the `X-Trace-Id` header and JSON body, including timeout and write-triggered notification paths. Pending watch requests are bounded per server process: the global and per-namespace limits reject excess requests with the standard HTTP 429/code `4290` error envelope instead of allocating another waiter.
 
@@ -309,5 +317,6 @@ The local rate limiter groups requests by source address, HTTP method, and match
 
 - [Architecture map](docs/project-map.md) and [example requests](examples.http)
 - [Current verification](docs/project/CURRENT_STATE.md) and [runbook](docs/project/RUNBOOK.md)
+- [Exact identity and V4 migration](docs/project/IDENTITY_MIGRATION.md)
 - [Maintainer entry point](AGENTS.md) and [documentation index](docs/project/SUPPORTING_DOCS_MANIFEST.md)
 - [GPT Project setup](docs/项目源文件/00-START_HERE.md) and [proposed upgrade roadmap](docs/项目源文件/UPGRADE_ROADMAP.md)

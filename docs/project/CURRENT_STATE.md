@@ -1,6 +1,30 @@
 # 当前状态
 
-## Config-Plan05 · 2026-11-25
+## Config-Plan06 · 2026-11-25
+
+以前两个不同拼写可能共用一条 MySQL 数据。升级后，它们各自拥有配置、写权限和更新进度。旧历史仍显示当时的名字，只能通过经确认的当前对象读取和回滚。遇到归属不清的旧库，升级会先停下来。隔离演练也证实，中途改表失败可以通过恢复备份重新开始。
+
+审查基线 `master@52e887daab5881974ec7d9bf06a707d2110fb378`，服务端、客户端、夹具与 CI 实现位于 `bf39bded3d1438652c5032feefbcc284af8a725e`。按交付提交 SHA 查看远端两项 CI。[Issue #5](https://github.com/MyKr-YSteinsK/config-center/issues/5) · [实现提交](https://github.com/MyKr-YSteinsK/config-center/commit/bf39bded3d1438652c5032feefbcc284af8a725e) · [CI](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml)
+
+| 验收 | 本机实测 |
+| --- | --- |
+| 精确身份 | H2 和 MySQL 经真实 HTTP 与参数化 SQL 按 app、env、key、name 分别验证大小写、重音、前后空格、组合字符、中文和补充字符。未写入的拼写为空或 404，分别创建后各为 v1。MySQL 当前身份列使用 `utf8mb4_0900_bin` / `NO PAD`。实际旧 JAR 接受孤立代理项并存为 HEX `3F`，现行两类写入和回滚拒绝该名称，返回 400/4001。 |
+| 授权、Watch 和灰度 | 交叉写为 403/4031，五张表无变化。两个已挂起 Watch 按各自精确 scope 唤醒，保持各自 trace 和容量清理。固定向量 `cafe/Cafe/café/cafe␠` 得到 3/68/4/58，关闭和 allowlist 优先级通过。 |
+| 并发和事务 | 保留同版本、同键首次创建、同 scope 多键、回滚竞争和 flush 通知回归。受控异名首次交错本机两笔均成功，各有 v1 和 revision 1。若 InnoDB 回滚一笔，测试核对 409/4091、没有部分提交，再用同一权限补写。V4 实包断连实验仍可用独立 HTTP/SQL 核对历史中的效果。 |
+| 空库及 V2/V3 升级 | V1–V4 空库、分步 V2→V3→V4、再次 migrate 为 0 和校验通过。V1–V3 文件原字节及已存校验和一致。V3 扩列前后保留原字段；V4 新增 owner 约束、保留无关列及两类 533 长度回滚表示。 |
+| 混合旧数据和映射 | 旧 JAR 与真实 V3 SQL 两套样本都验证归属。单 scope 的混合 key/name 可自动迁移。混合 scope、孤立历史、异常 revision 或错误/过期映射阻止升级。正确映射后，逐行对照原始历史与业务字段、ID、lock_version、版本和共享 revision。 |
+| 备份、故障与实包 | 缺映射时五张表的行、列和索引不变，实际启动记下 V4 `success=0`。DDL 权限故障留下第一张表的 `owner_id`，正常重启拒绝。导入备份到另一隔离实例后，V3 JAR 读回原数据。该副本再升 V4，两类历史可分页，回滚生成 v4；旧拼写独立创建为 v1，Watch 分别到 5 和 1，旗标 bucket 分别为 68 和 3。 |
+| 缓存与全量 | CLI 忽略两代旧别名缓存，实际离线请求无回退，联网先拿 200，再用新 ETag 拿 304。JDK 17.0.12、Maven 3.9.16 上 `clean verify` 通过服务端 88 和客户端 82 项。隔离 MySQL 8.0.46、`REPEATABLE-READ`、非 root 账户及独占 `config_center_it` 下 Failsafe 通过 31 项，五个套件分别为 3、6、1、10、11 项。 |
+
+实包演练使用 V3 JAR SHA-256 `1076e4f4cd4dd8c9c26308031bfea7b09eea6a767c0a0e640e0a1f22d63bb9d7` 与 V4 JAR SHA-256 `f4e5891f3a77dcce81c225e812eebf0e8efe98bc1d5c480de77b917b95afd064`。合成逻辑备份为 13,161 字节，SHA-256 为 `b8254c1585978a0c300b5ecebdbfb2ff36f0a3ce7f27cbf0787a3ff461aaca4a`。三套演练实例各用独立数据目录和 loopback 端口。主库、Compose 卷及真实配置未参与。本机 Docker 引擎不可用，使用独立 mysqld。退回旧服务使用匹配的 V3 备份副本。本轮只验证了单版本切换和既有写授权边界。[迁移合同](IDENTITY_MIGRATION.md) · [复现与恢复](RUNBOOK.md#config-plan06-精确名称与迁移)
+
+用本轮源码构建的 H2 JAR 和真实 CLI 重跑 Plan04 的五种 Watch 演练。一次写入后在最后一次 503 约 5.03 秒后补取并确认，H2 重启后从 0 重新订阅。持续 503、拒绝连接和无响应分别在约 6.01、6.00、7.25 秒结束，进程退出 1，保留已确认游标 1。[Watch 演练](RUNBOOK.md#config-plan04-watch-演练)
+
+## 后续工作
+
+按实际消费需求评估持久写入回执、幂等和写入前置条件。确认合同后再安排调用链重构、诊断和单仓展示。前端、SDK 与跨项目消费仍列于 [升级路线](../项目源文件/UPGRADE_ROADMAP.md)。接管和本机待清理材料见 [历史整理](HISTORY.md)。
+
+## Config-Plan05 · 2026-11-25（V3 基线）
 
 真实 MySQL 验证同时保存时写进去的是哪一笔，并用断连演练证明可以查到想要的效果是否曾出现。修复前，等值拼写争用首条 revision 时，被数据库回滚的一笔返回系统异常。现在它返回明确的写入冲突，成功方仍有完整的记录与通知。
 
@@ -16,10 +40,6 @@
 | 回归与环境 | Windows、JDK 17.0.12、Maven Wrapper 3.9.16。`clean verify` 服务端 86、客户端 83 项。独立 MySQL 8.0.46、`REPEATABLE-READ`、专用非 root `config_center_it` 下，Failsafe 执行 18 项，其中并发 10、名称 1、原持久化 6、V2 升级 1。全部无失败或跳过。Docker 引擎不可用，本机使用独立 mysqld。 |
 
 本机 H2 与 MySQL 演练使用同一服务端 JAR，SHA-256 为 `1076e4f4cd4dd8c9c26308031bfea7b09eea6a767c0a0e640e0a1f22d63bb9d7`。实际矩阵、读回和候选方案见 [写入证据](WRITE_CONSISTENCY.md)，命令见 [运行手册](RUNBOOK.md#config-plan05-并发与结果读回)。
-
-## 后续工作
-
-先决定等价拼写是否应共用身份和授权。若需要唯一请求归因或安全重放，再定义持久回执和前置条件，随后安排调用链重构、诊断与单仓展示。前端、SDK 与跨项目消费仍列于 [升级路线](../项目源文件/UPGRADE_ROADMAP.md)。接管和本机待清理材料见 [历史整理](HISTORY.md)。
 
 ## Config-Plan04 · 2026-11-24
 
