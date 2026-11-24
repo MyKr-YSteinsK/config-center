@@ -101,7 +101,7 @@ docker compose logs --no-color config-center-server
 docker compose logs --no-color mysql
 ```
 
-`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume; use it only when an intentional reset of local development data is authorized. The next startup creates an empty database and reapplies all Flyway migrations, currently `V1__init_schema.sql` and `V2__add_history_version_unique_constraints.sql`.
+`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume; use it only when an intentional reset of local development data is authorized. The next startup creates an empty database and reapplies all Flyway migrations, currently V1 through V3.
 
 For a manually managed empty MySQL database, grant a dedicated non-root account access to the schema, set the required values, and select `mysql`:
 
@@ -113,9 +113,9 @@ $env:CONFIG_CENTER_API_KEY = "replace-with-local-api-key"
 java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
 ```
 
-Flyway applies the V1 baseline and V2 history-version uniqueness constraints before Hibernate performs `ddl-auto=validate`. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY`.
+On MySQL, Flyway creates the V1 schema, applies V2 history-version uniqueness constraints and widens both history reason columns in V3. Hibernate then validates the schema. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY`.
 
-Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline; `V2__add_history_version_unique_constraints.sql` makes each history business key and version unique. Add a new `V3__...sql` or later migration for future schema changes rather than editing an applied migration. Confirm the applied/unchanged migration from the server log:
+Migration files are under `config-center-server/src/main/resources/db/migration/`. `V1__init_schema.sql` is the immutable baseline; `V2__add_history_version_unique_constraints.sql` makes each history business key and version unique. `V3__widen_rollback_history_reasons.sql` widens both nullable history reasons to `VARCHAR(600)`. Start future migrations at V4 and preserve all applied scripts. Confirm the applied/unchanged migration from the server log:
 
 ```powershell
 docker compose logs --no-color config-center-server | Select-String "Migrating schema|up to date"
@@ -135,7 +135,7 @@ $env:CONFIG_CENTER_API_KEY = "replace-with-MYSQL_API_KEY"
 docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml down -v
 ```
 
-The `mysql-it` profile uses Failsafe and the dedicated `config_center_it` schema. The normal `clean verify` remains H2-only and does not require Docker.
+The `mysql-it` profile exclusively uses the disposable `config_center_it` schema. Failsafe runs persistence checks and a populated V2-to-V3 upgrade. The upgrade fixture rebuilds the five application tables and Flyway history. See the [upgrade and build rollback procedure](docs/project/RUNBOOK.md#v3-升级与构建回退). The normal `clean verify` remains H2-only and does not require Docker.
 
 ## Local walkthrough
 
@@ -177,7 +177,7 @@ $featureBody = @{
   name = "new-checkout"
   enabled = $true
   rolloutPercentage = 30
-  allowlist = @("u1000", "u2000")
+  allowlist = @("u1000", "u2000", "a+b")
   operator = "demo"
   reason = "local verification"
 } | ConvertTo-Json
@@ -224,7 +224,7 @@ Remove the argument to use the configured five long-poll rounds. The final `cach
 
 The client retries 5xx and network failures and may use a structurally valid cached configuration only after those transient attempts are exhausted. A cache entry is valid only when its body is a configuration response with integral `code: 0` and array `data`; malformed entries neither send an ETag nor satisfy a 304 response or fallback. HTTP 4xx responses, including 429, neither retry nor open the availability circuit breaker and never return stale cache as success; requests rejected by an already-open breaker also do not fall back.
 
-Fresh HTTP 200 responses must contain integral `code: 0` and non-null `data`. Configuration data must be an array, while Watch data requires boolean `changed` and a non-negative integral `latestVersion`. A valid cached body with a missing or blank ETag remains eligible for fallback and sends an unconditional request. Malformed successful responses are protocol errors. Cache writes use a completed file in the same directory and atomic replacement when supported. The [known CLI encoding issue](docs/项目源文件/UPGRADE_ROADMAP.md#仓库审查) affects query values such as user IDs containing a plus sign.
+Fresh HTTP 200 responses must contain integral `code: 0` and non-null `data`. Configuration data must be an array, while Watch data requires boolean `changed` and a non-negative integral `latestVersion`. A valid cached body with a missing or blank ETag remains eligible for fallback and sends an unconditional request. Malformed successful responses are protocol errors. Cache writes use a completed file in the same directory and atomic replacement when supported. The CLI encodes query values once. With the walkthrough data, `--demo.userId=a+b` gives the same allowlist decision as a direct HTTP request using `userId=a%2Bb`.
 
 ## Public API
 
@@ -243,7 +243,7 @@ Fresh HTTP 200 responses must contain integral `code: 0` and non-null `data`. Co
 | `GET` | `/api/features/history` | none | Read bounded Feature Flag history |
 | `POST` | `/api/features/rollback` | `X-API-Key` | Restore a Feature Flag snapshot as a new version |
 
-All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching ETag requests return HTTP 304 without a JSON body. See `examples.http` for ready-to-run requests.
+All normal JSON responses use `code`, `message`, `data`, and `traceId`. Matching entity tags and a standalone `If-None-Match: *` return HTTP 304 with ETag, trace ID and an empty body for both empty and populated configuration lists. See `examples.http` for ready-to-run requests.
 
 History reads return newest business versions first and keep the existing list response envelope. Both history endpoints default to the newest 50 snapshots; `limit` accepts `1..200`, and an optional positive `beforeVersion` is an exclusive business-version cursor. To read the next page, use the smallest `version` from the current page as `beforeVersion`. Calls that previously omitted pagination now receive at most 50 snapshots rather than the complete history.
 
@@ -253,7 +253,7 @@ Configuration watch requires `sinceVersion >= 0` and `timeoutSeconds` within `1.
 
 Within one server process, concurrent first writes to different keys in the same `app + env` namespace are serialized through a bounded 64-stripe lock, so both writes commit with distinct history rows and a monotonic namespace revision.
 
-Write requests validate string lengths and require positive expected and rollback target versions when supplied. Feature Flag allowlists accept at most 20 non-blank entries of 32 characters each. Invalid bodies or query types return HTTP 400/code `4001`. Unexpected server failures return code `5000` and `系统异常`. Diagnostic details and the stack trace are logged with the response trace ID.
+Write requests validate string lengths and require positive expected and rollback target versions when supplied. Rollback reasons allow up to 500 UTF-16 code units. Both histories retain the target-version prefix and full input, up to 533 code units. Feature Flag allowlists accept at most 20 non-blank entries of 32 characters each. Invalid bodies or query types return HTTP 400/code `4001`. Unexpected server failures return code `5000` and `系统异常`. Diagnostic details and the stack trace are logged with the response trace ID.
 
 The local rate limiter groups requests by source address, HTTP method, and matched route pattern, with an access-order bucket cap to bound memory use. Micrometer exposes the monotonic FunctionCounter as `config_center_rate_limit_blocked`; Prometheus renders the counter sample as `config_center_rate_limit_blocked_total`. Watch metrics expose current pending waiters and active namespaces as `config_center_watch_pending` and `config_center_watch_namespaces`, while the monotonic rejection FunctionCounter `config_center_watch_rejected` is rendered by Prometheus as `config_center_watch_rejected_total`.
 

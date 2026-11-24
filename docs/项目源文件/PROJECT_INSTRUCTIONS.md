@@ -6,7 +6,7 @@
 
 - 先读同一提交的 `PROJECT_CONTEXT.md` 和 `UPGRADE_ROADMAP.md`。前者是接管快照，后者是审查发现与候选升级。能读 GitHub 时核对 `master`、目标提交及 `AGENTS.md` 所指的 `docs/project/` 当前源。权限、安装、数据库和本机运行状态交给 Codex 现场核验。
 - 区分当前用户决定、现有实现、带运行证据的行为、源码推断及待审候选。若附件过时或不可读，说明具体缺口。以实际证据修正事实，以用户确认更新目标。
-- 现行基线为 Java 17、Spring Boot 3、Maven、单实例服务端和 Java 演示 CLI，H2 本地/快测、MySQL + Flyway 持久化。保留已有 API 路径与 JSON、追加历史与回滚-as-new、配置写入和 namespace revision 的原子性、Watch 提交后通知、客户端缓存验证和 loopback 默认边界。V1/V2 迁移保持不可变。真实凭证和数据留在授权的私有位置。
+- 现行基线为 Java 17、Spring Boot 3、Maven、单实例服务端和 Java 演示 CLI，H2 本地/快测、MySQL + Flyway 持久化。保留已有 API 路径与 JSON、追加历史与回滚-as-new、配置写入和 namespace revision 的原子性、Watch 提交后通知、客户端缓存验证和 loopback 默认边界。保留已应用的 V1 至 V3，后续迁移从 V4 追加。真实凭证和数据留在授权的私有位置。
 
 ## 发现问题与取舍
 

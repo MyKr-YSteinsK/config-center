@@ -68,7 +68,8 @@ config-center/
 │       │       ├── application-local.yml
 │       │       ├── application-mysql.yml
 │       │       ├── db/migration/V1__init_schema.sql
-│       │       └── db/migration/V2__add_history_version_unique_constraints.sql
+│       │       ├── db/migration/V2__add_history_version_unique_constraints.sql
+│       │       └── db/migration/V3__widen_rollback_history_reasons.sql
 │       └── test/
 │           ├── java/com/example/configcenter/MysqlPersistenceIT.java
 │           └── resources/
@@ -116,7 +117,7 @@ Responsibilities:
 - Use a dedicated watch timeout larger than the server long-poll timeout
 - Refetch and persist configurations after a watch change
 - Call Feature Flag evaluation API
-- Build configuration, Watch, and evaluation URLs from URI templates. The HTTP transport can encode values a second time, as documented in the [review](项目源文件/UPGRADE_ROADMAP.md#仓库审查).
+- Build configuration, Watch, and evaluation URLs from URI templates. `DemoRunner` encodes the template variables once. `ReliableHttp` passes the resulting URI to Spring's URI overload. The encoded string remains the cache key.
 - Reject malformed HTTP 200 envelopes before caching or acting on them
 
 Current package: `com.example.democlient`
@@ -146,7 +147,7 @@ GlobalExceptionHandler -> unified error body
 Actuator / Micrometer -> health and metrics endpoints
 ```
 
-Request boundaries mirror persistence limits: `app` is at most 100 characters, `env` 50, configuration/feature keys 200, configuration values 2000, descriptions/reasons 500, and operators 100. Expected and rollback target versions must be positive. Feature allowlists accept at most 20 non-blank entries of at most 32 characters each, keeping worst-case JSON escaping within the 4000-character column.
+For incoming requests, `app` is at most 100 characters, `env` 50, configuration/feature keys 200, configuration values 2000, descriptions/reasons 500, and operators 100. Rollback reasons use Java string length. The history representation adds up to 33 code units to the 500-unit input. Both nullable V3 history columns allow 600 characters. Expected and rollback target versions must be positive. Feature allowlists accept at most 20 non-blank entries of at most 32 characters each, keeping worst-case JSON escaping within the 4000-character column.
 
 Validation failures, missing parameters, malformed JSON, and query type mismatches return HTTP 400 with code `4001`. Unknown exceptions are logged server-side with the request trace ID and full stack trace, while the external HTTP 500 body remains the stable, non-sensitive code `5000` / message `系统异常` envelope.
 
@@ -313,6 +314,8 @@ server loads one ordered configuration snapshot
   -> map the snapshot to response DTOs once
   -> length-prefix all response fields and hash them into a weak ETag
   -> use the same DTO snapshot for conditional comparison and the 200 body
+  -> standalone * returns 304 for every valid list, including []; MVC compares other entity tags weakly
+  -> matching responses retain ETag and trace ID with an empty body
 
 client validates cached configuration body before use
   -> valid, nonblank ETag: GET /api/configs with If-None-Match
@@ -382,11 +385,11 @@ MySQL schema baseline:
 
 See [current verification](project/CURRENT_STATE.md) for the latest tested environments. Earlier persistence milestones are indexed in the [history](project/HISTORY.md).
 
-- `V1__init_schema.sql` is the immutable initial migration and creates `config_item`, `config_item_history`, `config_namespace_revision`, `feature_flag`, and `feature_flag_history`; `V2__add_history_version_unique_constraints.sql` replaces duplicate four-column history lookup indexes with unique constraints. Flyway owns `flyway_schema_history`.
+- `V1__init_schema.sql` is the immutable initial migration and creates `config_item`, `config_item_history`, `config_namespace_revision`, `feature_flag`, and `feature_flag_history`; `V2__add_history_version_unique_constraints.sql` replaces duplicate four-column history lookup indexes with unique constraints. V3 widens both history reason columns to VARCHAR(600) NULL. Flyway owns `flyway_schema_history`.
 - Primary keys use MySQL identity columns. Current-row and namespace uniqueness plus history business-key/version uniqueness and three-column history lookup indexes mirror the JPA annotations.
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
 - The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` for the container-internal listener. `SERVER_BIND_ADDRESS` controls host publication.
-- The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies Flyway V1/V2 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback including bounded cursor reads, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data.
+- The `mysql-it` Maven profile runs `MysqlPersistenceIT` through Failsafe against the dedicated `config_center_it` schema. It verifies V1–V3 empty/no-op migration, Hibernate validation, configuration and Feature Flag lifecycle/history/rollback including bounded cursor reads, persisted namespace revision, current-row and history-version MySQL uniqueness, optimistic locking, and `utf8mb4` data. The subsequent `MysqlV2UpgradeIT` rebuilds only the disposable application tables and Flyway history, migrates to V2, seeds both domains and revision, applies V3, compares rows, indexes and checksums, then exercises a 533-unit reason through both rollback services after Hibernate validates the upgraded schema.
 - `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
 - GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.
 - The server image is built from the repository root with Maven Wrapper on Maven 3.9.16/JDK 17, then copies only the executable server JAR into a Java 17 JRE image and runs it as a non-root user.

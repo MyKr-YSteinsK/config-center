@@ -68,6 +68,14 @@ GET {{baseUrl}}/api/configs?app=demo-app&env=dev
 GET {{baseUrl}}/api/configs?app=demo-app&env=dev
 If-None-Match: W/"replace-with-current-etag"
 
+### A valid empty or populated list has a representation: 304, ETag, X-Trace-Id and empty body
+GET {{baseUrl}}/api/configs?app=demo-app&env=dev
+If-None-Match: *
+
+### Empty namespace
+GET {{baseUrl}}/api/configs?app=empty-demo&env=test
+If-None-Match: *
+
 ### Read one configuration; dotted keys are supported
 GET {{baseUrl}}/api/configs/db.pool.size?app=demo-app&env=dev
 
@@ -78,6 +86,7 @@ GET {{baseUrl}}/api/configs/history?app=demo-app&env=dev&key=db.pool.size&limit=
 GET {{baseUrl}}/api/configs/history?app=demo-app&env=dev&key=db.pool.size&limit=20&beforeVersion=20
 
 ### Roll back configuration version 1 as a new version; API Key is required
+# Both rollback endpoints allow 500 UTF-16 code units. Omitting the reason stores just rollback-to=1.
 POST {{baseUrl}}/api/configs/rollback
 X-API-Key: {{apiKey}}
 Content-Type: application/json
@@ -105,7 +114,7 @@ Content-Type: application/json
   "name": "new-checkout",
   "enabled": true,
   "rolloutPercentage": 30,
-  "allowlist": ["u1000", "u2000"],
+  "allowlist": ["u1000", "u2000", "a+b"],
   "operator": "demo",
   "reason": "initial rule"
 }
@@ -115,6 +124,9 @@ GET {{baseUrl}}/api/features?app=demo-app&env=dev
 
 ### Allowlist evaluation: enabled=true, bucket=-1, decision=allowlist 命中
 GET {{baseUrl}}/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u1000
+
+### The CLI option --demo.userId=a+b and this request select the same allowlist user
+GET {{baseUrl}}/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=a%2Bb
 
 ### Percentage evaluation: stable bucket for the same user and feature
 GET {{baseUrl}}/api/features/evaluate?app=demo-app&env=dev&name=new-checkout&userId=u3000
