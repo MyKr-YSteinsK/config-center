@@ -12,3 +12,5 @@ demo:
     timeoutSeconds: 10
     readTimeoutMarginMs: 2000
     rounds: 5
+    recoveryTimeoutSeconds: 30
+    recoveryRetryIntervalMs: 1000

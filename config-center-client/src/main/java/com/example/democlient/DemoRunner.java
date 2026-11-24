@@ -1,5 +1,6 @@
 package com.example.democlient;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,6 +14,7 @@ public class DemoRunner implements CommandLineRunner {
     private final ConfigClient configClient;
     private final HttpFetcher standardHttp;
     private final ObjectMapper mapper;
+    private final WatchSession.Timing watchTiming;
 
     @Value("${demo.baseUrl}")
     private String baseUrl;
@@ -40,66 +42,70 @@ public class DemoRunner implements CommandLineRunner {
 
     public DemoRunner(ConfigClient configClient,
                       @Qualifier("standardHttp") HttpFetcher standardHttp,
-                      ObjectMapper mapper) {
+                      ObjectMapper mapper,
+                      WatchSession.Timing watchTiming) {
         this.configClient = configClient;
         this.standardHttp = standardHttp;
         this.mapper = mapper;
+        this.watchTiming = watchTiming;
     }
 
     @Override
     public void run(String... args) throws Exception {
-        int cacheHit = 0;
-        int etagHit304 = 0;
+        FetchOutput output = new FetchOutput();
         System.out.println("=== Config Center Client ===");
 
-        String configUrl = buildConfigUrl(baseUrl, app, env);
-        ConfigClient.FetchResult initial = configClient.fetchConfigs(configUrl);
-        if (initial.fromCache()) cacheHit++;
-        if (initial.notModified()) etagHit304++;
-        printFetch("initial fetch", initial);
-
-        long sinceVersion = 0;
-        if (watchEnabled) {
-            System.out.println("\nWatching config changes (long polling) ...");
-            for (int i = 0; i < rounds; i++) {
-                String watchUrl = buildWatchUrl(
-                        baseUrl, app, env, sinceVersion, timeoutSeconds);
-                try {
-                    ConfigClient.WatchResult result = configClient.watchOnce(
-                            watchUrl, configUrl);
-                    System.out.println("watch result: changed=" + result.changed()
-                            + ", latestVersion=" + result.latestVersion());
-                    if (result.changed()) {
-                        sinceVersion = result.latestVersion();
-                        ConfigClient.FetchResult refreshed = result.refreshed();
-                        if (refreshed.fromCache()) cacheHit++;
-                        if (refreshed.notModified()) etagHit304++;
-                        printFetch("change detected -> refreshed configs", refreshed);
-                    }
-                } catch (Exception e) {
-                    System.out.println("WARN: watch failed: " + e.getMessage());
-                }
+        try {
+            String configUrl = buildConfigUrl(baseUrl, app, env);
+            if (watchEnabled && rounds > 0) {
+                new WatchSession(configClient, configUrl,
+                        cursor -> buildWatchUrl(baseUrl, app, env, cursor, timeoutSeconds),
+                        watchTiming, output::print).run(rounds);
+            } else {
+                output.print("initial fetch", configClient.fetchConfigs(configUrl));
             }
+            evaluateFeature();
+        } catch (InterruptedException cancelled) {
+            Thread.currentThread().interrupt();
+            throw cancelled;
+        } finally {
+            output.printMetrics();
         }
+    }
 
+    private void evaluateFeature() throws InterruptedException {
+        ReliableHttp.checkInterrupted();
         System.out.println("\nEvaluating feature...");
         String evalUrl = buildEvaluationUrl(baseUrl, app, env, featureName, userId);
         try {
             var response = standardHttp.getWithRetry(evalUrl, null);
+            ReliableHttp.checkInterrupted();
             configClient.requireSuccessfulData(response.getBody(), "FEATURE_EVALUATION");
             System.out.println(mapper.readTree(response.getBody()).toPrettyString());
-        } catch (Exception e) {
-            System.out.println("ERROR: evaluate failed: " + e.getMessage());
+        } catch (InterruptedException cancelled) {
+            throw cancelled;
+        } catch (Exception failure) {
+            ReliableHttp.checkInterrupted();
+            System.out.println("ERROR: evaluate failed: " + failure.getMessage());
         }
-
-        System.out.println("\n=== Metrics Summary ===");
-        System.out.println("cacheHit=" + cacheHit + ", etag304=" + etagHit304);
     }
 
-    private void printFetch(String label, ConfigClient.FetchResult result) throws Exception {
-        System.out.println(label + ": fromCache=" + result.fromCache()
-                + ", notModified=" + result.notModified());
-        System.out.println(mapper.readTree(result.body()).toPrettyString());
+    private final class FetchOutput {
+        private int cacheHit;
+        private int etagHit304;
+
+        void print(String label, ConfigClient.FetchResult result) throws JsonProcessingException {
+            if (result.fromCache()) cacheHit++;
+            if (result.notModified()) etagHit304++;
+            System.out.println(label + ": fromCache=" + result.fromCache()
+                    + ", notModified=" + result.notModified() + ", source=" + result.source());
+            System.out.println(mapper.readTree(result.body()).toPrettyString());
+        }
+
+        void printMetrics() {
+            System.out.println("\n=== Metrics Summary ===");
+            System.out.println("cacheHit=" + cacheHit + ", etag304=" + etagHit304);
+        }
     }
 
     static String buildConfigUrl(String baseUrl, String app, String env) {

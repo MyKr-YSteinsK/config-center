@@ -2,6 +2,9 @@ package com.example.democlient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -133,6 +136,40 @@ class ConfigClientTest {
         }
     }
 
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {" ", "*", "etag", "\"old\", W/\"other\""})
+    void aCachedBodyWithoutOneConcreteValidatorCannotSatisfy304(String etag) {
+        InMemoryCache cache = new InMemoryCache();
+        cache.put("configs", etag, VALID_CONFIG_BODY);
+        AtomicReference<String> sent = new AtomicReference<>();
+        HttpFetcher standard = (url, validator) -> {
+            sent.set(validator);
+            return ResponseEntity.status(304).build();
+        };
+
+        var failure = assertThrows(HttpRequestFailedException.class,
+                () -> client(standard, unusedWatch(), cache).fetchConfigs("configs"));
+
+        assertEquals(null, sent.get());
+        assertEquals("HTTP_304_WITHOUT_REQUEST_VALIDATOR", failure.getMessage());
+        assertFalse(failure.isRecoverable());
+        assertEquals(1, cache.putCount);
+    }
+
+    @Test
+    void a304WithAnExplicitlyDifferentTagCannotValidateTheSentCache() {
+        InMemoryCache cache = new InMemoryCache();
+        cache.put("configs", "W/\"old\"", VALID_CONFIG_BODY);
+        HttpFetcher standard = (url, validator) -> ResponseEntity.status(304).eTag("\"other\"").build();
+
+        var failure = assertThrows(HttpRequestFailedException.class,
+                () -> client(standard, unusedWatch(), cache).fetchConfigs("configs"));
+
+        assertEquals("HTTP_304_ETAG_MISMATCH", failure.getMessage());
+        assertFalse(failure.isRecoverable());
+    }
+
     @Test
     void nonRetryableError_isNotCachedOrHiddenByFallback() {
         InMemoryCache cache = new InMemoryCache();
@@ -195,6 +232,15 @@ class ConfigClientTest {
     }
 
     @Test
+    void unchangedWatchOncePreservesTheOneObservationEntryPoint() throws Exception {
+        HttpFetcher watch = (url, etag) -> ResponseEntity.ok(
+                "{\"code\":0,\"data\":{\"changed\":false,\"latestVersion\":2}}");
+        var result = client(unusedStandard(), watch, new InMemoryCache()).watchOnce("watch", "configs");
+
+        assertEquals(new ConfigClient.WatchResult(false, 2, null), result);
+    }
+
+    @Test
     void specialCharacters_areEncodedInAllClientUrls() {
         String configUrl = DemoRunner.buildConfigUrl(
                 "http://localhost:8080", "team & api", "dev+blue");
@@ -215,6 +261,7 @@ class ConfigClientTest {
     void malformedConfig200_isProtocolErrorAndIsNotCached() {
         List<String> invalidBodies = List.of(
                 "not-json",
+                VALID_CONFIG_BODY + "{}",
                 "{}",
                 "{\"code\":\"0\",\"data\":[]}",
                 "{\"code\":1,\"data\":[]}",

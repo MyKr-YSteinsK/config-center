@@ -17,7 +17,7 @@ public class CircuitBreaker {
     private State state = State.CLOSED;
     private int failures = 0;
     private long openUntilEpochMs = 0;
-    private boolean halfOpenInFlight = false;
+    private Thread halfOpenProbe;
 
     public CircuitBreaker(int failureThreshold, long openMillis) {
         this(failureThreshold, openMillis, System::currentTimeMillis);
@@ -37,7 +37,7 @@ public class CircuitBreaker {
         if (state == State.OPEN) {
             if (now >= openUntilEpochMs) {
                 state = State.HALF_OPEN;
-                halfOpenInFlight = false;
+                halfOpenProbe = null;
             } else {
                 return false;
             }
@@ -45,8 +45,8 @@ public class CircuitBreaker {
 
         // HALF_OPEN 只放一个探测请求过去，先看看服务是不是缓过来了。
         if (state == State.HALF_OPEN) {
-            if (halfOpenInFlight) return false;
-            halfOpenInFlight = true;
+            if (halfOpenProbe != null) return false;
+            halfOpenProbe = Thread.currentThread();
             return true;
         }
 
@@ -56,7 +56,13 @@ public class CircuitBreaker {
     public synchronized void recordSuccess() {
         failures = 0;
         state = State.CLOSED;
-        halfOpenInFlight = false;
+        halfOpenProbe = null;
+    }
+
+    synchronized void releaseProbe() {
+        if (halfOpenProbe == Thread.currentThread()) {
+            halfOpenProbe = null;
+        }
     }
 
     public synchronized void recordFailure() {
@@ -75,7 +81,7 @@ public class CircuitBreaker {
     private void open() {
         state = State.OPEN;
         openUntilEpochMs = clock.getAsLong() + openMillis;
-        halfOpenInFlight = false;
+        halfOpenProbe = null;
     }
 
     synchronized State state() {

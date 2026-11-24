@@ -25,6 +25,13 @@ public class ClientHttpConfiguration {
         return reliableHttp(connectTimeoutMs, watchReadTimeoutMs(timeoutSeconds, marginMs));
     }
 
+    @Bean
+    WatchSession.Timing watchRecoveryTiming(
+            @Value("${demo.watch.recoveryTimeoutSeconds:30}") long timeoutSeconds,
+            @Value("${demo.watch.recoveryRetryIntervalMs:1000}") long intervalMs) {
+        return WatchSession.Timing.fromSettings(timeoutSeconds, intervalMs);
+    }
+
     static int watchReadTimeoutMs(int timeoutSeconds, int marginMs) {
         if (timeoutSeconds < 1 || marginMs < 1) {
             throw new IllegalArgumentException("watch timeout and margin must be positive");

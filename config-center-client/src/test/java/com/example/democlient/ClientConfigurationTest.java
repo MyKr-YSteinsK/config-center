@@ -3,6 +3,8 @@ package com.example.democlient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.io.IOException;
@@ -32,7 +34,40 @@ class ClientConfigurationTest {
 
     @Test
     void clientBeansAreWiredWithSeparateHttpFetchers() {
-        new ApplicationContextRunner()
+        clientContext().run(context -> {
+            assertThat(context).hasSingleBean(ConfigClient.class);
+            assertThat(context).hasBean("standardHttp");
+            assertThat(context).hasBean("watchHttp");
+            var timing = context.getBean(WatchSession.Timing.class);
+            assertEquals(30_000_000_000L, timing.timeoutNanos());
+            assertEquals(1_000_000_000L, timing.retryIntervalNanos());
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"recoveryTimeoutSeconds=0", "recoveryTimeoutSeconds=-1",
+            "recoveryTimeoutSeconds=9223372037", "recoveryRetryIntervalMs=0", "recoveryRetryIntervalMs=-1",
+            "recoveryRetryIntervalMs=9223372036855"})
+    void watchRecoverySettingsFailAtStartupWhenInvalid(String setting) {
+        clientContext().withPropertyValues("demo.watch." + setting)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(
+                            setting.endsWith("9223372037") || setting.endsWith("9223372036855")
+                                    ? ArithmeticException.class : IllegalArgumentException.class);
+                });
+    }
+
+    @Test
+    void maximumConvertibleRecoverySettingsAreAccepted() {
+        var timing = WatchSession.Timing.fromSettings(9_223_372_036L, 9_223_372_036_854L);
+
+        assertEquals(9_223_372_036_000_000_000L, timing.timeoutNanos());
+        assertEquals(9_223_372_036_854_000_000L, timing.retryIntervalNanos());
+    }
+
+    private ApplicationContextRunner clientContext() {
+        return new ApplicationContextRunner()
                 .withUserConfiguration(DemoClientApplication.class)
                 .withPropertyValues(
                         "demo.baseUrl=http://localhost:8080",
@@ -40,12 +75,7 @@ class ClientConfigurationTest {
                         "demo.env=dev",
                         "demo.featureName=feature",
                         "demo.userId=user"
-                )
-                .run(context -> {
-                    assertThat(context).hasSingleBean(ConfigClient.class);
-                    assertThat(context).hasBean("standardHttp");
-                    assertThat(context).hasBean("watchHttp");
-                });
+                );
     }
 
     @Test

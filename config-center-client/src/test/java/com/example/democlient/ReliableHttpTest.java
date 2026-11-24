@@ -1,5 +1,7 @@
 package com.example.democlient;
 
+import com.sun.net.httpserver.HttpServer;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -13,13 +15,21 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestOperations;
 
+import java.io.InterruptedIOException;
+import java.net.InetSocketAddress;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -135,6 +145,7 @@ class ReliableHttpTest {
 
         assertTrue(transientFailure.isCacheFallbackAllowed());
         assertFalse(circuitOpen.isCacheFallbackAllowed());
+        assertTrue(circuitOpen.isRecoverable());
         assertTrue(circuitOpen.getMessage().startsWith("CIRCUIT_OPEN:"));
         verify(restOperations).exchange(
                 eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
@@ -170,6 +181,113 @@ class ReliableHttpTest {
         assertEquals(CircuitBreaker.State.OPEN, breaker.state());
         clock.addAndGet(100);
         assertTrue(breaker.allowRequest());
+    }
+
+    @Test
+    void interruptedBackoffRestoresTheSignalAndStopsInternalRetries() {
+        when(exchange()).thenReturn(ResponseEntity.status(503).build());
+        ReliableHttp cancelledHttp = new ReliableHttp(
+                restOperations, new RetryPolicy(3, 1, 1), new CircuitBreaker(2, 1_000),
+                millis -> { throw new InterruptedException("cancel backoff"); });
+
+        try {
+            assertThrows(InterruptedException.class, () -> cancelledHttp.getWithRetry("http://test", null));
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+        verify(restOperations).exchange(
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void cancelledInFlightProbeDoesNotApplyAResponseOrKeepItsSlot(boolean returnsResponse) {
+        AtomicLong clock = new AtomicLong();
+        CircuitBreaker breaker = new CircuitBreaker(1, 100, clock::get);
+        breaker.recordFailure();
+        clock.set(100);
+        var guardedHttp = new ReliableHttp(restOperations, new RetryPolicy(3, 1, 1), breaker, sleeps::add);
+
+        when(exchange()).thenAnswer(invocation -> {
+            if (returnsResponse) {
+                Thread.currentThread().interrupt();
+                return ResponseEntity.ok("ignored");
+            }
+            throw new ResourceAccessException("cancelled", new InterruptedIOException("cancelled"));
+        });
+
+        try {
+            assertThrows(InterruptedException.class, () -> guardedHttp.getWithRetry("http://test", null));
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+        assertTrue(sleeps.isEmpty());
+        assertEquals(CircuitBreaker.State.HALF_OPEN, breaker.state());
+        assertTrue(breaker.allowRequest());
+        verify(restOperations).exchange(
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+    }
+
+    @Test
+    void cancelDuringRealSocketReadWaitsForIoToReturnAndPreventsAnotherRequest() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var requestArrived = new CountDownLatch(1);
+        var releaseServer = new CountDownLatch(1);
+        var requests = new AtomicInteger();
+        server.createContext("/", exchange -> {
+            requests.incrementAndGet();
+            requestArrived.countDown();
+            try {
+                releaseServer.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException cancelled) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        var result = new AtomicReference<Throwable>();
+        var interruptedOnExit = new AtomicReference<Boolean>();
+        ReliableHttp transport = new ReliableHttp(800, 800, new RetryPolicy(3, 1, 1),
+                new CircuitBreaker(2, 1000));
+        Thread client = new Thread(() -> {
+            try {
+                transport.getWithRetry("http://127.0.0.1:" + server.getAddress().getPort(), null);
+            } catch (Exception failure) {
+                result.set(failure);
+            } finally {
+                interruptedOnExit.set(Thread.currentThread().isInterrupted());
+            }
+        });
+        client.setDaemon(true);
+        try {
+            client.start();
+            assertTrue(requestArrived.await(3, TimeUnit.SECONDS));
+            client.interrupt();
+            client.join(5_000);
+
+            assertFalse(client.isAlive());
+            assertInstanceOf(InterruptedException.class, result.get());
+            assertEquals(Boolean.TRUE, interruptedOnExit.get());
+            assertEquals(1, requests.get());
+        } finally {
+            releaseServer.countDown();
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void socketReadTimeoutIsARecoverableNetworkError() {
+        when(exchange()).thenThrow(new ResourceAccessException("read timeout", new SocketTimeoutException("timeout")));
+
+        var failure = assertThrows(HttpRequestFailedException.class, () -> http.getWithRetry("http://test", null));
+
+        assertTrue(failure.isRecoverable());
+        assertTrue(failure.isCacheFallbackAllowed());
+        assertFalse(Thread.currentThread().isInterrupted());
+        assertEquals(2, sleeps.size());
     }
 
     @SuppressWarnings("unchecked")
