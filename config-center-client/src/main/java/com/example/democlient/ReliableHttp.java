@@ -9,6 +9,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestOperations;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
+
 public class ReliableHttp implements HttpFetcher {
 
     private final RestOperations restOperations;
@@ -44,7 +46,7 @@ public class ReliableHttp implements HttpFetcher {
         for (int attempt = 1; attempt <= retryPolicy.getMaxAttempts(); attempt++) {
             try {
                 ResponseEntity<String> response = restOperations.exchange(
-                        url, HttpMethod.GET, entity, String.class);
+                        URI.create(url), HttpMethod.GET, entity, String.class);
                 int status = response.getStatusCode().value();
 
                 if (status == 200 || status == 304) {

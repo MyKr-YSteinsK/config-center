@@ -62,8 +62,9 @@ public class ConfigController {
 
         ConfigService.ConfigListSnapshot snapshot = service.listSnapshot(app, env);
 
-        if (ifNoneMatch != null && ifNoneMatch.equals(snapshot.etag())) {
-            // 304 按惯例不带 body，但 traceId 这种头信息还是会正常挂出去。
+        // Every valid namespace has a list representation, including the empty list.
+        // Spring MVC handles weak comparison and tag lists on the 200 response below.
+        if (ifNoneMatch != null && "*".equals(ifNoneMatch.trim())) {
             return ResponseEntity.status(304).eTag(snapshot.etag()).build();
         }
 

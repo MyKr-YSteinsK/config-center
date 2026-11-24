@@ -89,7 +89,7 @@ class MysqlPersistenceIT {
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank",
                 String.class);
 
-        assertEquals(List.of("1", "2"), appliedVersions);
+        assertEquals(List.of("1", "2", "3"), appliedVersions);
         assertEquals(0, flyway.migrate().migrationsExecuted);
         assertIndexExists("uk_cfg_hist_app_env_key_ver", 0);
         assertIndexExists("uk_ff_hist_app_env_name_ver", 0);

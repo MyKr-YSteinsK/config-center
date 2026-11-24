@@ -7,6 +7,11 @@ import com.example.configcenter.repository.ConfigNamespaceRevisionRepository;
 import com.example.configcenter.service.ConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.time.Instant;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -119,6 +124,41 @@ class ConfigEtagIntegrationTest {
 
         verify(itemRepository, times(1))
                 .findAllByAppAndEnvOrderByConfigKeyAsc("app", "dev");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void conditionalGetEvaluatesExistingRepresentation(boolean populated) throws Exception {
+        if (populated) {
+            service.upsert(config("v1", "first"));
+        }
+        String etag = currentEtag();
+        for (String condition : List.of("*", etag, etag.substring(2), "\"other\", " + etag)) {
+            mockMvc.perform(get("/api/configs").param("app", "app").param("env", "dev")
+                            .header(HttpHeaders.IF_NONE_MATCH, condition).header("X-Trace-Id", "conditional"))
+                    .andExpect(status().isNotModified())
+                    .andExpect(content().string(""))
+                    .andExpect(header().string(HttpHeaders.ETAG, etag))
+                    .andExpect(header().string("X-Trace-Id", "conditional"));
+        }
+        mockMvc.perform(get("/api/configs").param("app", "app").param("env", "dev")
+                        .header(HttpHeaders.IF_NONE_MATCH, "\"other\", W/\"another\""))
+                .andExpect(status().isOk()).andExpect(header().string(HttpHeaders.ETAG, etag))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.length()").value(populated ? 1 : 0));
+        mockMvc.perform(get("/api/configs").param("app", " ").param("env", "dev")
+                        .header(HttpHeaders.IF_NONE_MATCH, "*"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(4001));
+    }
+
+    @Test
+    void timestampAloneInvalidatesEtag() throws Exception {
+        service.upsert(config("fixed", "description"));
+        String etag = currentEtag();
+        var row = itemRepository.findByAppAndEnvAndConfigKey("app", "dev", "key").orElseThrow();
+        row.setUpdatedAt(Instant.parse("2001-01-01T00:00:00Z"));
+        itemRepository.saveAndFlush(row);
+        assertNotEquals(etag, currentEtag());
     }
 
     private String currentEtag() throws Exception {

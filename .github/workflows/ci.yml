@@ -79,6 +79,11 @@ jobs:
       - name: Verify MySQL integration
         run: ./mvnw -q -B -Pmysql-it verify
 
+      - name: Report executed MySQL suites
+        run: |
+          cat config-center-server/target/failsafe-reports/com.example.configcenter.MysqlPersistenceIT.txt
+          cat config-center-server/target/failsafe-reports/com.example.configcenter.MysqlV2UpgradeIT.txt
+
       - name: Capture MySQL service log
         if: failure()
         run: docker logs "${{ job.services.mysql.id }}" > config-center-server/target/mysql-service.log 2>&1

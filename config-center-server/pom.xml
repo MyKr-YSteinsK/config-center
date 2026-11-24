@@ -120,6 +120,7 @@
                             </execution>
                         </executions>
                         <configuration>
+                            <runOrder>alphabetical</runOrder>
                             <includes>
                                 <include>**/*Mysql*IT.java</include>
                             </includes>

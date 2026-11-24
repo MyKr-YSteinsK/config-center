@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestOperations;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
@@ -61,7 +62,7 @@ class ReliableHttpTest {
         assertFalse(error.isCacheFallbackAllowed());
         assertTrue(sleeps.isEmpty());
         verify(restOperations).exchange(
-                eq("http://test"), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 
     @ParameterizedTest
@@ -81,7 +82,7 @@ class ReliableHttpTest {
 
         assertEquals(CircuitBreaker.State.CLOSED, breaker.state());
         verify(restOperations, times(3)).exchange(
-                eq("http://test"), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 
     @Test
@@ -100,7 +101,7 @@ class ReliableHttpTest {
         assertEquals(CircuitBreaker.State.CLOSED, breaker.state());
         assertEquals(2, sleeps.size());
         verify(restOperations, times(3)).exchange(
-                eq("http://test"), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 
     @Test
@@ -115,7 +116,7 @@ class ReliableHttpTest {
         assertTrue(error.isCacheFallbackAllowed());
         assertEquals(2, sleeps.size());
         verify(restOperations, times(3)).exchange(
-                eq("http://test"), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 
     @Test
@@ -136,7 +137,7 @@ class ReliableHttpTest {
         assertFalse(circuitOpen.isCacheFallbackAllowed());
         assertTrue(circuitOpen.getMessage().startsWith("CIRCUIT_OPEN:"));
         verify(restOperations).exchange(
-                eq("http://test"), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 
     @Test
@@ -150,7 +151,7 @@ class ReliableHttpTest {
         assertEquals("ok", response.getBody());
         assertEquals(1, sleeps.size());
         verify(restOperations, times(2)).exchange(
-                eq("http://test"), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 
     @Test
@@ -174,6 +175,6 @@ class ReliableHttpTest {
     @SuppressWarnings("unchecked")
     private ResponseEntity<String> exchange() {
         return restOperations.exchange(
-                eq("http://test"), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
+                eq(URI.create("http://test")), eq(HttpMethod.GET), any(HttpEntity.class), eq(String.class));
     }
 }

@@ -55,7 +55,7 @@ public class FeatureFlagHistory {
     @Column(length = 100)
     private String operator;
 
-    @Column(length = 500)
+    @Column(length = 600)
     private String reason;
 
     @Column(nullable = false)
