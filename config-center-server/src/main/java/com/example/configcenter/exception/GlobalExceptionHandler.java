@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -91,6 +92,12 @@ public class GlobalExceptionHandler {
     public org.springframework.http.ResponseEntity<ApiResponse<?>> handleConflict(DataIntegrityViolationException e) {
         return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
                 .body(ApiResponse.fail(ErrorCode.CONFLICT.getCode(), "数据冲突，可能是唯一键重复或并发写入导致"));
+    }
+
+    @ExceptionHandler(CannotAcquireLockException.class)
+    public org.springframework.http.ResponseEntity<ApiResponse<?>> handleLockConflict() {
+        return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                .body(ApiResponse.fail(ErrorCode.CONFLICT.getCode(), "写入锁冲突，请刷新后再决定是否重试"));
     }
 
     @ExceptionHandler({

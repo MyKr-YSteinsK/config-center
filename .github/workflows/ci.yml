@@ -81,8 +81,10 @@ jobs:
 
       - name: Report executed MySQL suites
         run: |
+          cat config-center-server/target/failsafe-reports/com.example.configcenter.MysqlNameIdentityIT.txt
           cat config-center-server/target/failsafe-reports/com.example.configcenter.MysqlPersistenceIT.txt
           cat config-center-server/target/failsafe-reports/com.example.configcenter.MysqlV2UpgradeIT.txt
+          cat config-center-server/target/failsafe-reports/com.example.configcenter.MysqlWriteConsistencyIT.txt
 
       - name: Capture MySQL service log
         if: failure()
