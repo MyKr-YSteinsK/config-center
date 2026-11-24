@@ -30,7 +30,16 @@ CLI 从游标 0 订阅。首个有效 Watch 观察、变化通知和较小 revis
 
 恢复以一轮所需的 Watch 观察和配置确认为单位。默认 30 秒内按至少 1 秒的间隔调度恢复尝试。配置读取待确认时直接补取，只有观察缺失时再 Watch。两种传输仍有独立断路器，已开始的内部尝试按原超时收尾。失败预算耗尽、终止错误或线程取消结束会话。对所有者先讲具体体验和证据，详细约定在 [开发入口](../../AGENTS.md)。[Issue #3](https://github.com/MyKr-YSteinsK/config-center/issues/3)
 
+## Config-Plan05 · 2026-11-25
+
+MySQL 同版本和首次创建继续使用当前事务与唯一约束。复现的两种等值拼写在首条 revision 上竞争时，InnoDB 选择回滚一笔，应用将 `CannotAcquireLockException` 映射为现有 409/4091。成功方的当前行、历史与 revision 同一事务提交，通知在提交后发送。读回后是否提交新的操作由调用方决定。[Issue #4](https://github.com/MyKr-YSteinsK/config-center/issues/4)
+
+保存断连后用独立读回核对效果。历史可显示曾经保存的值，现有 trace、operator 和 reason 各有用途，历史缺少唯一的持久请求身份。是否引入回执、幂等键及新的写入前置条件，按实际使用需求另行决定。
+
 ## 待决定
+
+- 选择 MySQL 等值的稳定身份或精确身份迁移。先明确已配置的两个拼写授权是否应共享数据，然后再设计 revision 首行、Watch、灰度和存量历史的兼容。两条路线及实测见 [写入一致性与结果核对](WRITE_CONSISTENCY.md)。
+- 如需唯一归因和安全重放，分别评估事务内写入回执、create-only、回滚前置版本与授权规则，按兼容验收另立任务。
 
 - POM 和镜像构建路径仍使用 `1.0.0`，历史 `v1.0.0` 指向早于当前基线的提交。版本和发布身份等待用户决定。
 - 接管时采用 `AI-Workflow-Assets` 的项目孵化器，Codex 可直接维护，GPT Project Main 可供用户手动接入。产品升级的候选与验收详见 [待审提案](../项目源文件/UPGRADE_ROADMAP.md)。

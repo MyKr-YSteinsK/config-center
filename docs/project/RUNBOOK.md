@@ -34,6 +34,36 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 
 直接运行 JAR 由 `SERVER_ADDRESS` 控制监听，默认 `127.0.0.1`。持久 Compose 的 `0.0.0.0` 只在容器内监听，主机侧由 `SERVER_BIND_ADDRESS` 控制并默认为 loopback。Swagger、H2 Console、Actuator 以及实验用 API key 在这个边界内使用。
 
+## Config-Plan05 并发与结果读回
+
+同时保存时，用返回的版本和独立读回区分哪个请求成功。保存后连接中断时，先核对当前、历史和 revision，再判断目标效果是否出现。测试故障由夹具引入，使用测试账号与数据。
+
+### 快测与真实 MySQL HTTP
+
+在仓库根使用 JDK 17。MySQL 命令开始前，依照 [README 的隔离 MySQL 步骤](../../README.md) 配置 `CONFIG_CENTER_DB_URL`、`CONFIG_CENTER_DB_USERNAME`、`CONFIG_CENTER_DB_PASSWORD` 和测试 API key，确认 URL 实际指向 loopback 上独占的 `config_center_it` 及专用非 root 账户。该 profile 包含重建测试表的 V2 升级 fixture，须使用可丢弃测试库。
+
+```powershell
+.\mvnw.cmd -q -B clean verify
+.\mvnw.cmd -q -B -Pmysql-it verify
+Get-Content config-center-server/target/failsafe-reports/com.example.configcenter.Mysql*IT.txt
+```
+
+两类写入在 `MysqlWriteConsistencyIT` 中经真实 HTTP 和不同数据库连接交错。测试输出 `Plan05 concurrent checkpoint`、连接号、隔离级别及 HTTP 状态。`MysqlNameIdentityIT` 与 `H2NameIdentityTest` 输出 `Plan05 matrix`，对照各引擎按真实表列查询的结果。复现包含已挂起 Watch、确实不等的 scope、大小写/重音/空格与灰度的变化。关键结果见 [写入证据](WRITE_CONSISTENCY.md)。
+
+### 实包响应丢失
+
+先执行上述构建。若运行 MySQL 实包，保留独立测试库及同一套环境变量，将 MySQL 命令行客户端加入 PATH。脚本核验实际 catalog 和认证账户，再从随机 loopback 端口启动 JAR。使用合成 app 和 key，限流只在该进程关闭。日志保存在 Git 忽略的 `docs/delete/Config-Plan05/`。
+
+```powershell
+python config-center-server/src/test/fixtures/write_outcome.py --profile local
+python config-center-server/src/test/fixtures/write_outcome.py --profile mysql
+Get-FileHash -Algorithm SHA256 config-center-server/target/config-center-server-1.0.0.jar
+```
+
+- `Caller` 输出调用方看到的断连。`Injector` 分别输出转发 1 次且上游 HTTP 200 的 trace，或转发 0 次。
+- `Reader` 经独立 HTTP 请求读回版本、历史和 revision。MySQL 场景另从新 SQL 连接打印并校验同一结果。已提交场景显示 v2/v1 和 revision 加一，未到达场景维持旧状态。
+- 后写覆盖时，当前 v3 和历史中的目标 v2 同时存在。另一客户端提交相同内容时，快照可证明效果存在，当前历史无法唯一归因。只在单独的重复写入对照中测试发送旧前置版本和无条件重复，预期分别为 409 和新增版本。
+
 ## Config-Plan04 Watch 演练
 
 客户端会先记下服务器观察到的变更。配置读取失败时，旧值可以继续显示并标为待同步。连接恢复后客户端直接补取，成功应用后才用确认的游标订阅下一轮。持续失败时，它给出最后进度并以失败退出。
@@ -157,3 +187,4 @@ java -jar "$old/src/config-center-server/target/config-center-server-1.0.0.jar" 
 3. Maven Wrapper 下载失败时先区分用户缓存可写性、网络和仓库依赖解析。历史 Windows 环境发生过 JUnit 临时目录清理失败。遇到同类错误可在当前终端给测试 JVM 设置 `-Djava.io.tmpdir=<已创建的仓库内临时目录>`，并确认该路径被 Git 忽略。
 4. Docker 报 `dockerDesktopLinuxEngine` 管道不可用时先核实引擎是否运行。Compose 配置能解析只说明配置语法通过，实际启动、恢复和保卷重启应查看对应运行结果。
 5. GitHub 推送使用本机凭证管理器，提交身份与认证账号分别检查。TLS 故障先诊断本机传输与认证设置，保留证书校验。
+6. Windows 上 Maven 清理报 JAR 被占用时，确认 PID 对应本次演练启动的进程并正常停止。脚本可从 `java.home` 定位实际 JDK 的 `bin/java.exe`，便于退出时关闭启动的 JVM。

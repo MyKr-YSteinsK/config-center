@@ -1,6 +1,6 @@
 # config-center 项目交接
 
-本批资料采用 `AI-Workflow-Assets` 的工程项目孵化器，来源版本为 [750c696](https://github.com/MyKr-YSteinsK/ai-workflow-assets/tree/750c69673ccaeac9b5999f3b38b8ebc11abebc24/项目孵化器)。接管基于现有 `MyKr-YSteinsK/config-center` 的 `master`，以 Java 后端简历价值为长期目标。当前已完成单仓缺陷修复及 CLI Watch 恢复。[Config-Plan03](https://github.com/MyKr-YSteinsK/config-center/issues/2) · [Config-Plan04](https://github.com/MyKr-YSteinsK/config-center/issues/3)
+本批资料采用 `AI-Workflow-Assets` 的工程项目孵化器，来源版本为 [750c696](https://github.com/MyKr-YSteinsK/ai-workflow-assets/tree/750c69673ccaeac9b5999f3b38b8ebc11abebc24/项目孵化器)。接管基于现有 `MyKr-YSteinsK/config-center` 的 `master`，以 Java 后端简历价值为长期目标。已完成单仓缺陷修复、CLI Watch 恢复、MySQL 并发写入与断连读回实证。[Config-Plan03](https://github.com/MyKr-YSteinsK/config-center/issues/2) · [Config-Plan04](https://github.com/MyKr-YSteinsK/config-center/issues/3) · [Config-Plan05](https://github.com/MyKr-YSteinsK/config-center/issues/4)
 
 ## 创建 GPT Project
 
@@ -9,7 +9,7 @@
 3. 上传 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) 与 [UPGRADE_ROADMAP.md](UPGRADE_ROADMAP.md)。从仓库的同一提交取得两份文件，把这一提交 SHA 放在新对话的第一条消息里。
 4. 可用下面的启动消息核对 GPT 实际读取的内容。新快照生效后，再处理可能冲突的同名旧附件。
 
-> 接手 MyKr-YSteinsK/config-center，资料版本为 <commit SHA>。先根据 PROJECT_CONTEXT.md 和 UPGRADE_ROADMAP.md 用一段通俗话说明 Watch 故障恢复带来的实际变化，再列出运行证据。请提出验证写入竞争、写入结果读回和 MySQL 一致性的最小范围及通过条件，等我确认。
+> 接手 MyKr-YSteinsK/config-center，资料版本为 <commit SHA>。先根据 PROJECT_CONTEXT.md 和 UPGRADE_ROADMAP.md 用一段通俗话说明同时保存与保存后断连的实测结果。根据名称比较证据比较两条身份路线，并指出什么时候需要唯一请求回执。等我确认后再起草下一轮范围和验收。
 
 ## 指令与维护源
 

@@ -6,6 +6,7 @@
 | 已接受的长期决定、D-011 和待定版本 | [DECISIONS.md](DECISIONS.md) |
 | 当前基线、证据与维护风险 | [CURRENT_STATE.md](CURRENT_STATE.md) |
 | 环境、数据归属、恢复与排障 | [RUNBOOK.md](RUNBOOK.md) |
+| 并发、MySQL 名称身份与断连后核对证据 | [WRITE_CONSISTENCY.md](WRITE_CONSISTENCY.md) |
 | 历史里程碑与本地待清理内容 | [HISTORY.md](HISTORY.md) |
 | 干净检出的公开使用说明与 API 请求 | [README.md](../../README.md)、[examples.http](../../examples.http) |
 | Java 模块、组件、协议和数据路径 | [架构地图](../project-map.md) |

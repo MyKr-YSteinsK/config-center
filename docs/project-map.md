@@ -280,6 +280,10 @@ request
 
 Configuration upsert and rollback both require an API Key authorized for the requested `app` and `env`. Missing or unauthorized keys return HTTP 403 with error code `4031`.
 
+### Concurrent writes and readback
+
+Service transactions keep updates, history and configuration revision atomic. The existing-row `expectedVersion` check protects a stale conditional upsert. Unique business keys, unique history versions and JPA optimistic locking protect competing transactions. A translated `CannotAcquireLockException` returns 409/4091 after rollback. For a lost response, separate current and history reads show persisted effects. The caller can use the revision to check configuration progress. [Real HTTP/MySQL evidence and readback procedure](project/WRITE_CONSISTENCY.md)
+
 ### Configuration rollback
 
 Intended behavior:
@@ -299,6 +303,8 @@ request
 ### Write authorization scope
 
 Configuration and Feature Flag upsert/rollback endpoints use the same lightweight API Key mapping from key to authorized `app/env`. Missing or unauthorized keys return HTTP 403/code `4031`; list, history, watch, and Feature Flag evaluation remain unauthenticated. API Key entries require non-blank key/app/env values, with app/env lengths matching request boundaries. Local and test use the development fallback unless overridden through `CONFIG_CENTER_API_KEY`; the MySQL profile requires a nonblank explicit `CONFIG_CENTER_API_KEY` and does not inherit that fallback.
+
+The `app/env` authorization comparison and JVM Watch key use exact Java strings. The MySQL business columns use `utf8mb4_unicode_ci`. In the measured cases, separate authorized spellings shared the same persisted rows, while a pending Watch on the other spelling timed out and saw the update on its next request. The evaluator hashes the requested feature name, so SQL-equal flag names can yield different buckets for one user. [Identity matrix and design choices](project/WRITE_CONSISTENCY.md#名称比较的实测矩阵)
 
 ### Feature evaluation
 

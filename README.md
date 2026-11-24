@@ -234,6 +234,14 @@ The session subscribes from 0 and reads again after its first valid Watch observ
 
 The recovery window starts on the first recoverable failure in a logical round. It includes later failures, stale fallbacks and open-breaker refusals. The default is 30 seconds to start new recovery calls, with at least 1 second between failed calls and the next attempt. An in-flight call may finish its internal retries and timeouts after that window, or confirm on success unless the thread was cancelled. Budget exhaustion, terminal HTTP or protocol errors, and cancellation end the Watch session with a nonzero exit. The final status includes the confirmed cursor, pending sync status and end reason. [Reproduce recovery, H2 restart and budget exhaustion](docs/project/RUNBOOK.md#config-plan04-watch-演练)
 
+## Concurrent writes and lost responses
+
+If two writes start from the same version, the losing write returns HTTP 409. Read the current row and history before choosing whether to submit a new write. `expectedVersion` checks an existing row. Creating a missing row and updating without a version condition remain supported. Configuration writes commit the current row, history and namespace revision together, and Watch signals after commit.
+
+A lost connection after saving leaves the result uncertain. Use a new connection to read the current value and history. History can show that the intended value was saved even when a later write replaced it. Attributing that saved value to one request requires a durable request identity.
+
+The MySQL name comparison can match case, accent and trailing-space variants that the exact Java authorization and Watch keys treat as different. This can delay a waiting Watch until its next poll and can change rollout buckets when the requested flag name changes. [MySQL and H2 evidence and pending decisions](docs/project/WRITE_CONSISTENCY.md) · [Reproduce the concurrency and lost-response scenarios](docs/project/RUNBOOK.md#config-plan05-并发与结果读回)
+
 ## Public API
 
 | Method | Path | Write authorization | Purpose |

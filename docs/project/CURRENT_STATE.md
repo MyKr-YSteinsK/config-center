@@ -1,5 +1,26 @@
 # 当前状态
 
+## Config-Plan05 · 2026-11-25
+
+真实 MySQL 验证同时保存时写进去的是哪一笔，并用断连演练证明可以查到想要的效果是否曾出现。修复前，等值拼写争用首条 revision 时，被数据库回滚的一笔返回系统异常。现在它返回明确的写入冲突，成功方仍有完整的记录与通知。
+
+基线 `master@eb84b51f67f103373b7999ec601cc708ab205591`，实现与验证位于 `5c259f47df1899f44e8a55adea274c93660a401d`。按最终交付 SHA 查询两项 CI。[Issue #4](https://github.com/MyKr-YSteinsK/config-center/issues/4) · [实现提交](https://github.com/MyKr-YSteinsK/config-center/commit/5c259f47df1899f44e8a55adea274c93660a401d) · [CI](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml)
+
+| 验收面 | 实际结果 |
+| --- | --- |
+| 同版本、首次创建及回滚竞争 | 两类资源从同一旧版本、缺行以及 upsert/rollback 的受控交错均为一个 200、一个 409/4091。胜者和完整历史均可读回。不同键在同 namespace 首写均 200，revision 到 2，已存在时并行更新到 4。 |
+| 原子性与通知 | 写入三部分 flush 后、提交前，独立连接仍读到旧值，Watch 等待中。提交后可读到新值且只通知一次。注入事务失败时五张表和通知计数保持，随后合法写入可用，Watch 资源释放。 |
+| 实际修复 | MySQL 的两个等价 app 拼写走不同条带，首条 revision 同时缺行时触发 1213/40001。基线返回 HTTP 500/code 5000，当前返回 409/4091。保留成功方唯一 v1 与 revision 1，败方提交无效且不通知。随后合法补写产生 revision 2。 |
+| 名称与授权 | MySQL 在已测案例折叠大小写、重音和尾空格，H2 独立。授权交叉用错拼写返回 403/4031。各用获授权拼写时，MySQL 可写同一行。已挂起的原拼写 Watch 带正确 trace 超时，下一轮看到 3。固定用户在 50% 灰度下，`cafe/Cafe` 得到 bucket 3/68。 |
+| 提交后断连 | H2 和 MySQL 实包均覆盖：只转发一次且上游 200 后断连、转发 0 次、后写覆盖、另一请求提交相同内容及重复写入对照。MySQL 独立 SQL 与 HTTP 当前、历史、revision 一致。目标效果可核对，完全相同的效果不能唯一归因。 |
+| 回归与环境 | Windows、JDK 17.0.12、Maven Wrapper 3.9.16。`clean verify` 服务端 86、客户端 83 项。独立 MySQL 8.0.46、`REPEATABLE-READ`、专用非 root `config_center_it` 下，Failsafe 执行 18 项，其中并发 10、名称 1、原持久化 6、V2 升级 1。全部无失败或跳过。Docker 引擎不可用，本机使用独立 mysqld。 |
+
+本机 H2 与 MySQL 演练使用同一服务端 JAR，SHA-256 为 `1076e4f4cd4dd8c9c26308031bfea7b09eea6a767c0a0e640e0a1f22d63bb9d7`。实际矩阵、读回和候选方案见 [写入证据](WRITE_CONSISTENCY.md)，命令见 [运行手册](RUNBOOK.md#config-plan05-并发与结果读回)。
+
+## 后续工作
+
+先决定等价拼写是否应共用身份和授权。若需要唯一请求归因或安全重放，再定义持久回执和前置条件，随后安排调用链重构、诊断与单仓展示。前端、SDK 与跨项目消费仍列于 [升级路线](../项目源文件/UPGRADE_ROADMAP.md)。接管和本机待清理材料见 [历史整理](HISTORY.md)。
+
 ## Config-Plan04 · 2026-11-24
 
 服务端通知有更新时，如果客户端一时取不到新值，会继续显示旧值并标明待同步。恢复后客户端自己补取，一直失败则提示最后一次确认进度并以失败结束。用真实 H2 JAR 和 Java CLI 演练时，服务端只在旧值确认后写了一次新值，客户端仍成功跟上。
@@ -15,10 +36,6 @@
 | 全量回归 | Windows、JDK 17.0.12、Maven Wrapper 3.9.16。`clean verify` 服务端 85 项、客户端 83 项，零失败或跳过。修复前两条 CLI 回归分别复现缺少补取、持续故障成功退出。真实 CLI 也验证了健康两轮、Watch 关闭和零轮三种入口。MySQL 沿用最终提交的隔离 CI。 |
 
 本机运行的服务端 JAR SHA-256 为 `39c3fbc84bb8e07c059301a125246c6800424c2c303e9e8d1b76a6b255a0f420`，CLI 通过同一源码的 `spring-boot:run` 启动。对应客户端打包文件 SHA-256 为 `acbf92c390dca4b1baaeb7361252b15db982d210157bc269e41fe94f87d606ce`。对持续送达部分字节的慢响应，请求周期仍取决于已有传输行为。可用 [运行手册](RUNBOOK.md#config-plan04-watch-演练) 复演正常、重启、恢复失败和仅一次写入的场景。
-
-## 后续工作
-
-下一轮核对同时写入时的版本冲突、同一命名空间多 key 首写、MySQL 排序规则与进程内键的匹配，以及提交后响应丢失时可独立核对的效果。调用链重构、诊断和单仓展示随后推进。前端、SDK 和跨项目消费见 [升级路线](../项目源文件/UPGRADE_ROADMAP.md)。接管基线和本地待清理区见 [历史整理](HISTORY.md)。
 
 ## Config-Plan03 · 2026-11-24
 
