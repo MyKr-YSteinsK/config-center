@@ -82,6 +82,8 @@ config-center/
         │   ├── java/com/example/democlient/
         │   └── resources/application.yml
         └── test/
+            ├── java/com/example/democlient/WatchCliTest.java
+            └── fixtures/watch_recovery.py
 ```
 
 ## 3. Maven modules
@@ -115,7 +117,7 @@ Responsibilities:
 - Fall back to a structurally valid cached configuration only after exhausted transient failures
 - Run a basic availability circuit breaker that counts 5xx and network failures only
 - Use a dedicated watch timeout larger than the server long-poll timeout
-- Refetch and persist configurations after a watch change
+- Observe Watch and confirm progress separately through `WatchSession`. Retry pending reads within the logical round even when the service receives no more writes.
 - Call Feature Flag evaluation API
 - Build configuration, Watch, and evaluation URLs from URI templates. `DemoRunner` encodes the template variables once. `ReliableHttp` passes the resulting URI to Spring's URI overload. The encoded string remains the cache key.
 - Reject malformed HTTP 200 envelopes before caching or acting on them
@@ -124,7 +126,7 @@ Current package: `com.example.democlient`
 
 The CLI retains its original package name.
 
-The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file. A present canonical file, including an empty or malformed one, never falls back to legacy data. Before a cache entry may supply an ETag, satisfy a 304 response, or serve transient-failure fallback, its body must be a configuration response with integral `code` equal to `0` and an array `data`; its ETag is used only when nonblank. Writes are serialized within the client instance, written to a same-directory `.tmp` file, and moved over the canonical file atomically when supported; filesystems without atomic move use a completed-temp-file replacement fallback.
+The canonical cache file is `.config-center-client-cache.json` in the user home directory. When the canonical file is absent, the client reads `.config-center-demo-client-cache.json` once and writes the migrated data to the canonical file without deleting the legacy file. A present canonical file, including an empty or malformed one, never falls back to legacy data. Before a cache entry may supply an ETag, satisfy a 304 response, or serve transient-failure fallback, its body must be a configuration response with integral `code` equal to `0` and an array `data`; its ETag is sent only when it represents a single concrete entity tag. Writes are serialized within the client instance, written to a same-directory `.tmp` file, and moved over the canonical file atomically when supported; filesystems without atomic move use a completed-temp-file replacement fallback.
 
 ## 4. Server architecture
 
@@ -318,15 +320,15 @@ server loads one ordered configuration snapshot
   -> matching responses retain ETag and trace ID with an empty body
 
 client validates cached configuration body before use
-  -> valid, nonblank ETag: GET /api/configs with If-None-Match
-  -> valid body with missing/blank ETag, or invalid cache: unconditional GET
-  -> 304: require and use valid cached body
+  -> valid body and a concrete ETag: GET /api/configs with If-None-Match
+  -> missing usable validator or invalid cached body: unconditional GET
+  -> 304: require valid cache and its sent validator; compare any returned ETag weakly
   -> 200: require numeric code 0 and array data, then persist new ETag and body
   -> 400/403/404/429: fail without retry or cache fallback
   -> 5xx/network failure: retry, then use valid cache when available
 ```
 
-The client circuit breaker is scoped to service availability. HTTP 4xx responses, including 429, prove that the service was reachable and therefore do not open the breaker; they still fail immediately without cache fallback. Only exhausted 5xx or network failures are cache-fallback eligible, and a request rejected by an already-open breaker is not treated as a fresh transient failure. After the open interval, one HALF_OPEN probe is admitted; success closes the breaker and any failure reopens it.
+The client circuit breaker is scoped to service availability. HTTP 4xx responses, including 429, prove that the service was reachable and therefore do not open the breaker; they still fail immediately without cache fallback. Only exhausted 5xx or network failures are cache-fallback eligible, and a request rejected by an already-open breaker is not treated as a fresh transient failure. After the open interval, one HALF_OPEN probe is admitted. Success closes the breaker, availability failures reopen it, and cancellation releases the probe held by the interrupted caller. The client checks interruption around requests and retry waits.
 
 HTTP 200 responses are not trusted solely because of their status. Configuration and Feature Flag evaluation responses require an integral `code` equal to `0` and non-null `data`; configuration data must be an array. The same configuration shape is required before persisted cache data is trusted for conditional requests, 304 bodies, or fallback. Watch data must be an object with a boolean `changed` and a non-negative integral `latestVersion`. Invalid JSON, missing fields, wrong types, or nonzero codes are protocol errors and are not written to cache or treated as cache-fallback-eligible failures.
 
@@ -358,6 +360,21 @@ Current behavior:
 - Registration atomically enforces both the global `config-watch.max-pending-waiters` capacity and the per-namespace `config-watch.max-pending-per-namespace` capacity. A full limit returns the normal `code/message/data/traceId` error envelope with HTTP 429/code `4290`, without adding a waiter.
 - Timeout, notification, and async completion release capacity idempotently and discard empty namespace entries. Notification callbacks run after the internal state lock is released.
 - `sinceVersion` must be non-negative and `timeoutSeconds` must be within `1..60`; violations return HTTP 400.
+
+### CLI Watch synchronization
+
+`ConfigClient.observeWatch` validates one Watch result. The existing `watchOnce` entry wraps that observation with a single refresh on a change. `DemoRunner` uses `WatchSession` for finite polling and reports the source of each displayed configuration.
+
+```text
+initial list read -> subscribe from 0 -> save first valid observation
+  -> fetch list (valid 200 or validated conditional 304)
+  -> adopt result and confirm the preceding observation
+  -> next Watch uses the confirmed cursor
+```
+
+The same sequence applies on updates and detected revision decreases. A fresh read can already include a later write. The confirmed cursor stays at the earlier observed revision because the list carries no revision, so a later Watch may cause a safe repeat read. Subsequent ordinary no-change observations need no extra configuration read. Watch timeout `latestVersion` was captured at registration. Reset detection relies on observing a lower value and cannot distinguish a rebuilt namespace that already reached the old cursor.
+
+A failed Watch is retried using the confirmed cursor. After an observation that needs a read, only the list is retried. A transient fallback stays pending. The default monotonic scheduling window is 30 seconds from the first failure, with a 1000 ms wait clipped to the remaining time. A successful Watch awaiting a list read keeps the same window. Each transport keeps its own breaker and up to three internal attempts. In-flight I/O can finish after the outer deadline. Beginning the next request or confirming a read checks thread interruption. Client and protocol errors immediately end the session. [Timing and loopback verification](project/RUNBOOK.md#config-plan04-watch-演练)
 
 ## 8. Runtime configuration baseline
 
@@ -398,7 +415,8 @@ Client defaults:
 
 - Server base URL `http://localhost:8080`
 - Standard connect/read timeouts `800 ms / 3000 ms`
-- Watch timeout `10 s`, read-timeout margin `2000 ms`, and `5` rounds
+- Watch timeout `10 s`, read-timeout margin `2000 ms`, and `5` logical rounds
+- Watch recovery scheduling window `30 s` and retry interval `1000 ms`
 - Retry policy: 3 attempts with exponential backoff and jitter
 - Circuit breaker: open after 2 recorded failures for 5 seconds
 - Canonical cache `${user.home}/.config-center-client-cache.json`

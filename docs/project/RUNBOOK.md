@@ -34,6 +34,56 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 
 直接运行 JAR 由 `SERVER_ADDRESS` 控制监听，默认 `127.0.0.1`。持久 Compose 的 `0.0.0.0` 只在容器内监听，主机侧由 `SERVER_BIND_ADDRESS` 控制并默认为 loopback。Swagger、H2 Console、Actuator 以及实验用 API key 在这个边界内使用。
 
+## Config-Plan04 Watch 演练
+
+客户端会先记下服务器观察到的变更。配置读取失败时，旧值可以继续显示并标为待同步。连接恢复后客户端直接补取，成功应用后才用确认的游标订阅下一轮。持续失败时，它给出最后进度并以失败退出。
+
+### 正常运行
+
+使用 JDK 17，在仓库根验证并启动新的本机 H2 进程。
+
+```powershell
+.\mvnw.cmd -q -B clean verify
+java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=local --server.address=127.0.0.1
+```
+
+在第二个终端运行 [README 的演练写入](../../README.md#local-walkthrough) 后，使用一个隔离的缓存目录运行两轮。首次 Watch 后有一次读取，可以用有效 304 确认。接下来没有新的写入时，无变化响应直接计一轮。
+
+```powershell
+$watchCache = (New-Item -ItemType Directory -Force "docs/delete/watch-normal-$([guid]::NewGuid())").FullName
+.\mvnw.cmd -q -B -pl config-center-client spring-boot:run "-Dspring-boot.run.jvmArguments=-Duser.home=`"$watchCache`"" '-Dspring-boot.run.arguments=--demo.baseUrl=http://127.0.0.1:8080 --demo.watch.rounds=2 --demo.watch.timeoutSeconds=1'
+```
+
+预期两轮结束均为 `pendingSync=false`，最终 `reason=completed`，然后运行功能评估。用 `--demo.watch.enabled=false` 或 `--demo.watch.rounds=0` 可单次读取和评估。
+
+### 故障、重启和预算耗尽
+
+用上面构建的 JAR，在仓库根执行下列命令。演练脚本使用 Python 3 标准库，在随机 loopback 端口启动自己的 H2 JAR 和受控 HTTP 服务，从 Maven 正常入口启动 Java CLI。每次使用隔离缓存和合成数据，日志写入 `docs/delete/Config-Plan04/`。
+
+```powershell
+python config-center-client/src/test/fixtures/watch_recovery.py recover
+python config-center-client/src/test/fixtures/watch_recovery.py restart
+python config-center-client/src/test/fixtures/watch_recovery.py 503
+python config-center-client/src/test/fixtures/watch_recovery.py connection
+python config-center-client/src/test/fixtures/watch_recovery.py timeout
+# 用 all 一次运行上述场景
+python config-center-client/src/test/fixtures/watch_recovery.py all
+```
+
+| 场景 | 预期请求与输出 |
+| --- | --- |
+| `recover` | 先确认旧值和 revision 1，再写入一次新值。配置 GET 连续 3 次收到 503，CLI 显示 `source=stale-cache`、`confirmedCursor=1`、`pendingSync=true`。断路器等待后，补取 200 并将新值写入缓存，确认游标 2。下一次为 `WATCH since=2`。默认 5 轮正常完成。 |
+| `restart` | 确认 revision 3 后重启 H2。下一次 Watch 返回 `changed=false, latestVersion=0`，补取空列表后确认 0。随后一条写入使 `WATCH since=0` 观察到 revision 1，新值应用成功。 |
+| `503`、`connection`、`timeout` | 一次更新通知之后持续拒绝配置读取、拒绝连接或不返回响应。缩短为 6 秒调度窗口和 250 ms 重试间隔，普通读取超时设为 900 ms。CLI 输出 `reason=recovery-budget-exhausted`、`confirmedCursor=1`、`pendingSync=true` 和失败原因，缓存仍为旧值，进程失败退出。脚本断言这些结果并打印实测恢复时长。 |
+
+### 如何读懂进度和时间
+
+- `observedRevision` 是 Watch 的观察值。长轮询超时时返回的是注册时的 revision。`confirmedCursor` 是在该观察之后成功读取所覆盖的下界。列表可能已经包含更晚的写入，下轮仍从确认的观察值追赶。
+- `source=http-200` 表示读取成功。`source=etag-304` 表示服务端验证了这次发送的具体 ETag，客户端可采用对应缓存。`source=stale-cache` 表示瞬时失败后暂用旧值，待同步的观察仍保留。`cacheHit` 包括两类缓存使用，`etag304` 只计验证成功。
+- 初次订阅一律从 0 开始。首个有效 Watch 观察后，再读取或验证一次列表，包括 revision 0 的空库。已同步后的较小观察值也会先读取，再采用较小的游标。数据库重建后若 revision 已追平或超过旧值，现有协议无法可靠辨认重建。
+- `demo.watch.rounds` 默认 5。有效观察和所需读取都成功后才完成一轮。临时故障共享同一个恢复窗口，窗口自第一次可恢复失败起按单调时间计。`recoveryTimeoutSeconds` 默认为 30，`recoveryRetryIntervalMs` 默认为 1000。临近截止时，最后一次等待缩短为剩余时间。已观察待同步的更新会直接重试列表。Watch 暂不可达时会用已确认游标继续观察。
+- 连接失败、读超时、5xx 和半开前的断路器拒绝可在窗口内恢复。4xx（含 429）、不合规的 304 和无效响应是终止错误。调度到期后，已进入 `getWithRetry` 的请求可完成最多三次内部尝试。有效读取可以确认，线程取消时保留中断并停止后续调用及确认。连接与读取超时沿用各自的传输设置，持续输送字节的响应可能超过本次测得的时长。
+
 ## Config-Plan03 实包复现
 
 在第一个终端运行 `clean verify`，用 JDK 17 启动本轮 JAR。H2 适合从空库快速复现。已准备独占测试库时，按 README 设置 MySQL 连接、非 root 账户和 `CONFIG_CENTER_API_KEY`，把 `local` 改为 `mysql`。本轮实测使用后者。

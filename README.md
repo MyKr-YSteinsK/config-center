@@ -220,11 +220,19 @@ After seeding the configuration and Feature Flag above, run the client once with
 .\mvnw.cmd -q -B -pl config-center-client spring-boot:run '-Dspring-boot.run.arguments=--demo.watch.enabled=false'
 ```
 
-Remove the argument to use the configured five long-poll rounds. The final `cacheHit` and `etag304` summary counts cover both the initial fetch and every Watch-triggered refresh. The client cache is stored at `${user.home}/.config-center-client-cache.json`; an existing legacy `.config-center-demo-client-cache.json` is migrated without being deleted only when the canonical file is absent. A present empty or malformed canonical cache does not revive legacy data.
+Remove the argument to use the configured five Watch rounds. A normal no-change poll or a completed configuration confirmation finishes one round. Each round can recover from temporary failures, including the last one. The final `cacheHit` and `etag304` counts include the initial read, verified 304 responses and stale fallbacks during Watch. The client cache is stored at `${user.home}/.config-center-client-cache.json`; an existing legacy `.config-center-demo-client-cache.json` is migrated without being deleted only when the canonical file is absent. A present empty or malformed canonical cache does not revive legacy data.
 
 The client retries 5xx and network failures and may use a structurally valid cached configuration only after those transient attempts are exhausted. A cache entry is valid only when its body is a configuration response with integral `code: 0` and array `data`; malformed entries neither send an ETag nor satisfy a 304 response or fallback. HTTP 4xx responses, including 429, neither retry nor open the availability circuit breaker and never return stale cache as success; requests rejected by an already-open breaker also do not fall back.
 
-Fresh HTTP 200 responses must contain integral `code: 0` and non-null `data`. Configuration data must be an array, while Watch data requires boolean `changed` and a non-negative integral `latestVersion`. A valid cached body with a missing or blank ETag remains eligible for fallback and sends an unconditional request. Malformed successful responses are protocol errors. Cache writes use a completed file in the same directory and atomic replacement when supported. The CLI encodes query values once. With the walkthrough data, `--demo.userId=a+b` gives the same allowlist decision as a direct HTTP request using `userId=a%2Bb`.
+Fresh HTTP 200 responses must contain integral `code: 0` and non-null `data`. Configuration data must be an array, while Watch data requires boolean `changed` and a non-negative integral `latestVersion`. A cached body with a missing or unusable ETag remains eligible for transient-failure fallback and sends an unconditional request. Accepting 304 requires a valid cached body and its concrete validator on the request. An ETag returned with the 304 must weakly match that validator. Malformed successful responses are protocol errors. Cache writes use a completed file in the same directory and atomic replacement when supported. The CLI encodes query values once. With the walkthrough data, `--demo.userId=a+b` gives the same allowlist decision as a direct HTTP request using `userId=a%2Bb`.
+
+### Watch recovery
+
+If the service reports a change while the configuration read is failing, the CLI can show the old cached value and keep the update pending. When reads work again, it fetches directly and applies the result even if the service has received no further writes.
+
+The session subscribes from 0 and reads again after its first valid Watch observation, including an empty namespace at revision 0. `observedRevision` reports what Watch saw. `confirmedCursor` advances only after a valid list 200 or a verified 304, up to the revision observed before the read. A smaller observed revision also triggers a read and can reset the cursor. Watch timeouts report the revision captured during registration. A database rebuild that catches up to the old cursor can look like normal progress.
+
+The recovery window starts on the first recoverable failure in a logical round. It includes later failures, stale fallbacks and open-breaker refusals. The default is 30 seconds to start new recovery calls, with at least 1 second between failed calls and the next attempt. An in-flight call may finish its internal retries and timeouts after that window, or confirm on success unless the thread was cancelled. Budget exhaustion, terminal HTTP or protocol errors, and cancellation end the Watch session with a nonzero exit. The final status includes the confirmed cursor, pending sync status and end reason. [Reproduce recovery, H2 restart and budget exhaustion](docs/project/RUNBOOK.md#config-plan04-watch-演练)
 
 ## Public API
 
@@ -275,7 +283,9 @@ The local rate limiter groups requests by source address, HTTP method, and match
 | `config-watch.max-pending-per-namespace` | `64` | Maximum pending Watch requests for one `app/env` namespace |
 | `security.api-keys` | one local/test `demo-app/dev` key | Configuration and Feature Flag write authorization mappings; MySQL requires nonblank `CONFIG_CENTER_API_KEY` and does not use the development fallback |
 | `demo.http.*` | `800/3000 ms` | Client connect/read timeouts |
-| `demo.watch.*` | `10 s + 2000 ms margin`, 5 rounds | Client long-poll settings |
+| `demo.watch.timeoutSeconds` / `demo.watch.readTimeoutMarginMs` | `10 s` / `2000 ms` | Long-poll timeout and extra client read margin |
+| `demo.watch.rounds` | `5` | Maximum completed logical rounds. Set 0 for the one-shot read and feature evaluation |
+| `demo.watch.recoveryTimeoutSeconds` / `demo.watch.recoveryRetryIntervalMs` | `30 s` / `1000 ms` | Recovery scheduling window and minimum retry interval. Both must be positive and convertible to nanoseconds |
 
 ## Known limits
 
