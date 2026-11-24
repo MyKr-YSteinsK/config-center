@@ -13,19 +13,16 @@ import java.util.List;
  */
 @Entity
 @Table(name = "feature_flag_history",
-        uniqueConstraints = {
-                @UniqueConstraint(name = "uk_ff_hist_app_env_name_ver",
-                        columnNames = {"app", "env", "name", "version"})
-        },
-        indexes = {
-                @Index(name = "idx_ff_hist_app_env_name", columnList = "app, env, name")
-        }
-)
+        uniqueConstraints = @UniqueConstraint(name = "uk_ff_hist_owner_ver", columnNames = {"owner_id", "version"}))
 public class FeatureFlagHistory {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // The current row's identity controls lookup. Original names below are audit data.
+    @Column(name = "owner_id", nullable = false)
+    private long ownerId;
 
     @Column(nullable = false, length = 100)
     private String app;
@@ -62,6 +59,8 @@ public class FeatureFlagHistory {
     private Instant createdAt;
 
     public Long getId() { return id; }
+
+    public void setOwnerId(long ownerId) { this.ownerId = ownerId; }
 
     public String getApp() { return app; }
     public void setApp(String app) { this.app = app; }

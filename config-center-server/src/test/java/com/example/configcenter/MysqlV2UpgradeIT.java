@@ -89,12 +89,27 @@ class MysqlV2UpgradeIT {
                 var earlierMigrations = migrationIdentity(db);
                 assertEquals(2, earlierMigrations.size());
 
-                assertEquals(1, latest.migrate().migrationsExecuted);
-                latest.validate();
+                var v3 = Flyway.configure().configuration(latest.getConfiguration()).target("3").load();
+                assertEquals(1, v3.migrate().migrationsExecuted);
+                v3.validate();
                 assertReasonColumns(db, 600);
                 assertEquals(rows, snapshot(db));
                 assertEquals(indexes, indexes(db));
-                assertEquals(earlierMigrations, migrationIdentity(db));
+                assertEquals(earlierMigrations, migrationIdentity(db).subList(0, 2));
+                var throughV3 = migrationIdentity(db);
+                assertEquals(3, throughV3.size());
+                assertEquals(1, latest.migrate().migrationsExecuted);
+                latest.validate();
+                assertEquals(rows, snapshot(db));
+                assertEquals(throughV3, migrationIdentity(db));
+                assertEquals(5, db.queryForObject("""
+                        SELECT COUNT(*) FROM config_item_history h JOIN config_item c ON c.id=h.owner_id
+                        WHERE c.app='legacy' AND c.env='dev' AND c.config_key='k'
+                        """, Integer.class));
+                assertEquals(5, db.queryForObject("""
+                        SELECT COUNT(*) FROM feature_flag_history h JOIN feature_flag f ON f.id=h.owner_id
+                        WHERE f.app='legacy' AND f.env='dev' AND f.name='f'
+                        """, Integer.class));
                 assertEquals(0, latest.migrate().migrationsExecuted);
                 // Boot next validates the upgraded schema, then the test calls both rollback services.
             };
@@ -131,7 +146,11 @@ class MysqlV2UpgradeIT {
         }
 
         private static List<List<Map<String, Object>>> snapshot(JdbcTemplate db) {
-            return TABLES.stream().map(t -> db.queryForList("SELECT * FROM " + t + " ORDER BY id")).toList();
+            return TABLES.stream().map(t -> {
+                var rows = db.queryForList("SELECT * FROM " + t + " ORDER BY id");
+                rows.forEach(row -> row.remove("owner_id"));
+                return rows;
+            }).toList();
         }
 
         private static List<Map<String, Object>> indexes(JdbcTemplate db) {
@@ -145,7 +164,7 @@ class MysqlV2UpgradeIT {
         private static List<Map<String, Object>> migrationIdentity(JdbcTemplate db) {
             return db.queryForList("""
                     SELECT version, script, checksum FROM flyway_schema_history
-                    WHERE version IN ('1','2') AND success = 1 ORDER BY installed_rank
+                    WHERE version IN ('1','2','3') AND success = 1 ORDER BY installed_rank
                     """);
         }
 

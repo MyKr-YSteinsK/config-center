@@ -6,6 +6,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.http.ResponseEntity;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -24,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -86,75 +90,75 @@ class ClientConfigurationTest {
         assertTrue(readTimeoutMs > 10_000);
     }
 
-    @Test
-    void legacyCacheIsMigratedToCanonicalFile() throws Exception {
-        Path canonical = tempDir.resolve(".config-center-client-cache.json");
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "empty", "malformed"})
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void previousGenerationIsIsolatedUntilAnOnlineRead(String state) throws Exception {
+        Path previous = tempDir.resolve(".config-center-client-cache.json");
         Path legacy = tempDir.resolve(".config-center-demo-client-cache.json");
-        ObjectMapper mapper = new ObjectMapper();
-        Files.write(legacy, mapper.writeValueAsBytes(Map.of(
-                "configs", new HttpDiskCache.Entry("etag", "body")
-        )));
+        Path exact = tempDir.resolve(".config-center-client-cache-exact-v1.json");
+        String aliasUrl = "http://127.0.0.1/api/configs?app=Demo&env=dev";
+        String previousBody = "{\"code\":0,\"data\":[{\"app\":\"demo\",\"value\":\"old alias\"}]}";
+        String exactBody = "{\"code\":0,\"data\":[]}";
+        var mapper = new ObjectMapper();
+        byte[] oldBytes = mapper.writeValueAsBytes(Map.of(aliasUrl,
+                new HttpDiskCache.Entry("W/\"old\"", previousBody)));
+        Files.write(previous, oldBytes);
+        Files.write(legacy, oldBytes);
+        if (!state.equals("missing")) {
+            Files.writeString(exact, state.equals("empty") ? "" : "not-json");
+        }
 
-        HttpDiskCache cache = new HttpDiskCache(canonical, legacy);
-
-        assertEquals("body", cache.get("configs").body);
-        assertTrue(Files.exists(canonical));
-    }
-
-    @Test
-    void canonicalCacheWinsOverLegacyCacheWhenBothExist() throws Exception {
-        Path canonical = tempDir.resolve(".config-center-client-cache.json");
-        Path legacy = tempDir.resolve(".config-center-demo-client-cache.json");
-        ObjectMapper mapper = new ObjectMapper();
-        Files.write(canonical, mapper.writeValueAsBytes(Map.of(
-                "configs", new HttpDiskCache.Entry("canonical-etag", "canonical-body")
-        )));
-        Files.write(legacy, mapper.writeValueAsBytes(Map.of(
-                "configs", new HttpDiskCache.Entry("legacy-etag", "legacy-body")
-        )));
-
-        HttpDiskCache cache = new HttpDiskCache(canonical, legacy);
-
-        assertEquals("canonical-body", cache.get("configs").body);
-        assertEquals("canonical-etag", cache.get("configs").etag);
-    }
-
-    @Test
-    void malformedCanonicalCacheDoesNotLoadLegacyCache() throws Exception {
-        Path canonical = tempDir.resolve(".config-center-client-cache.json");
-        Path legacy = tempDir.resolve(".config-center-demo-client-cache.json");
-        ObjectMapper mapper = new ObjectMapper();
-        Files.writeString(canonical, "not-json");
-        Files.write(legacy, mapper.writeValueAsBytes(Map.of(
-                "configs", new HttpDiskCache.Entry("legacy-etag", "legacy-body")
-        )));
-
-        HttpDiskCache cache = new HttpDiskCache(canonical, legacy);
-
-        assertNull(cache.get("configs"));
-        assertEquals("not-json", Files.readString(canonical));
-    }
-
-    @Test
-    void emptyCanonicalCacheDoesNotLoadLegacyCache() throws Exception {
-        Path canonical = tempDir.resolve(".config-center-client-cache.json");
-        Path legacy = tempDir.resolve(".config-center-demo-client-cache.json");
-        ObjectMapper mapper = new ObjectMapper();
-        Files.write(canonical, new byte[0]);
-        Files.write(legacy, mapper.writeValueAsBytes(Map.of(
-                "configs", new HttpDiskCache.Entry("legacy-etag", "legacy-body")
-        )));
-
-        HttpDiskCache cache = new HttpDiskCache(canonical, legacy);
-
-        assertNull(cache.get("configs"));
-        assertEquals(0, Files.size(canonical));
+        String originalHome = System.getProperty("user.home");
+        try {
+            System.setProperty("user.home", tempDir.toString());
+            var calls = new AtomicInteger();
+            HttpFetcher normal = (url, etag) -> {
+                assertEquals(aliasUrl, url);
+                return switch (calls.incrementAndGet()) {
+                    case 1 -> {
+                        assertNull(etag);
+                        throw new HttpRequestFailedException("offline", 503, true);
+                    }
+                    case 2 -> {
+                        assertNull(etag);
+                        yield ResponseEntity.ok().eTag("W/\"exact\"").body(exactBody);
+                    }
+                    case 3 -> {
+                        assertEquals("W/\"exact\"", etag);
+                        yield ResponseEntity.status(304).build();
+                    }
+                    case 4 -> {
+                        assertEquals("W/\"exact\"", etag);
+                        throw new HttpRequestFailedException("offline", 503, true);
+                    }
+                    default -> throw new AssertionError("unexpected request");
+                };
+            };
+            var cache = new HttpDiskCache();
+            assertNull(cache.get(aliasUrl));
+            var client = new ConfigClient(normal, normal, cache, mapper);
+            assertThrows(HttpRequestFailedException.class, () -> client.fetchConfigs(aliasUrl));
+            assertEquals(exactBody, client.fetchConfigs(aliasUrl).body());
+            // Relaunch against the new generation on disk.
+            var reloaded = new ConfigClient(normal, normal, new HttpDiskCache(), mapper);
+            var notModified = reloaded.fetchConfigs(aliasUrl);
+            assertTrue(notModified.notModified());
+            assertEquals(exactBody, notModified.body());
+            var fallback = reloaded.fetchConfigs(aliasUrl);
+            assertTrue(fallback.fromCache());
+            assertFalse(fallback.notModified());
+            assertEquals(exactBody, fallback.body());
+            assertArrayEquals(oldBytes, Files.readAllBytes(previous));
+            assertArrayEquals(oldBytes, Files.readAllBytes(legacy));
+        } finally {
+            System.setProperty("user.home", originalHome);
+        }
     }
 
     @Test
     void atomicMoveUnsupported_fallsBackToSafeReplacement() {
         Path canonical = tempDir.resolve("fallback-cache.json");
-        Path legacy = tempDir.resolve("missing-legacy.json");
         AtomicInteger moveAttempts = new AtomicInteger();
         HttpDiskCache.CacheFileMover mover = (source, target, options) -> {
             if (moveAttempts.incrementAndGet() == 1) {
@@ -164,37 +168,35 @@ class ClientConfigurationTest {
             return Files.move(source, target, options);
         };
 
-        HttpDiskCache cache = new HttpDiskCache(canonical, legacy, mover);
+        HttpDiskCache cache = new HttpDiskCache(canonical, mover);
         cache.put("configs", "etag", "body");
 
         assertEquals(2, moveAttempts.get());
-        assertEquals("body", new HttpDiskCache(canonical, legacy).get("configs").body);
+        assertEquals("body", new HttpDiskCache(canonical).get("configs").body);
     }
 
     @Test
     void failedReplacement_preservesExistingCanonicalCache() throws Exception {
         Path canonical = tempDir.resolve("preserved-cache.json");
-        Path legacy = tempDir.resolve("missing-preserved-legacy.json");
-        HttpDiskCache initial = new HttpDiskCache(canonical, legacy);
+        HttpDiskCache initial = new HttpDiskCache(canonical);
         initial.put("configs", "old-etag", "old-body");
         byte[] originalBytes = Files.readAllBytes(canonical);
 
-        HttpDiskCache failing = new HttpDiskCache(canonical, legacy,
+        HttpDiskCache failing = new HttpDiskCache(canonical,
                 (source, target, options) -> {
                     throw new IOException("injected replacement failure");
                 });
         failing.put("configs", "new-etag", "new-body");
 
         assertArrayEquals(originalBytes, Files.readAllBytes(canonical));
-        assertEquals("old-body", new HttpDiskCache(canonical, legacy).get("configs").body);
+        assertEquals("old-body", new HttpDiskCache(canonical).get("configs").body);
         assertFalse(Files.exists(canonical.resolveSibling(canonical.getFileName() + ".tmp")));
     }
 
     @Test
     void concurrentWrites_leaveOneCompleteReadableCache() throws Exception {
         Path canonical = tempDir.resolve("concurrent-cache.json");
-        Path legacy = tempDir.resolve("missing-concurrent-legacy.json");
-        HttpDiskCache cache = new HttpDiskCache(canonical, legacy);
+        HttpDiskCache cache = new HttpDiskCache(canonical);
         ExecutorService executor = Executors.newFixedThreadPool(4);
         List<Callable<Void>> writes = IntStream.range(0, 20)
                 .mapToObj(index -> (Callable<Void>) () -> {
@@ -211,7 +213,7 @@ class ClientConfigurationTest {
             executor.shutdownNow();
         }
 
-        HttpDiskCache reloaded = new HttpDiskCache(canonical, legacy);
+        HttpDiskCache reloaded = new HttpDiskCache(canonical);
         for (int index = 0; index < 20; index++) {
             assertEquals("body-" + index, reloaded.get("url-" + index).body);
         }

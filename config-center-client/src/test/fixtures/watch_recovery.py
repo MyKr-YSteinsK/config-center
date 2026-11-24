@@ -28,6 +28,12 @@ class LocalServer:
         self.directory = directory
         self.env = env
         self.process = None
+        settings = subprocess.run(["java", "-XshowSettings:properties", "-version"], check=True, timeout=10,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
+        java_home = re.search(r"(?m)^\s*java\.home = (.+)$", settings)
+        if not java_home:
+            raise RuntimeError("Cannot find the actual Java executable for the fixture")
+        self.java = Path(java_home[1].strip()) / "bin" / ("java.exe" if os.name == "nt" else "java")
         self.starts = 0
         self.port = None
 
@@ -36,7 +42,7 @@ class LocalServer:
         log = self.directory / f"server-{self.starts}.log"
         with log.open("wb") as output:
             self.process = subprocess.Popen(
-                ["java", "-jar", str(JAR), "--spring.profiles.active=local",
+                [str(self.java), "-jar", str(JAR), "--spring.profiles.active=local",
                  "--server.address=127.0.0.1", "--server.port=0", "--rate-limit.enabled=false",
                  "--spring.datasource.url=jdbc:h2:mem:watch-smoke;MODE=MySQL;DB_CLOSE_DELAY=-1",
                  "--spring.datasource.driver-class-name=org.h2.Driver", "--spring.datasource.username=sa",
@@ -190,7 +196,7 @@ def run_cli(proxy, directory, env):
     for line in text.splitlines():
         if line.startswith(("Watch round", "Watch ended", "WARN: Watch recovery", "Using stale", "cacheHit=")):
             print(line)
-    cache = json.loads((cache_dir / ".config-center-client-cache.json").read_text(encoding="utf-8"))
+    cache = json.loads((cache_dir / ".config-center-client-cache-exact-v1.json").read_text(encoding="utf-8"))
     config = json.loads(cache[proxy.origin + CONFIGS + QUERY]["body"])["data"]
     print(f"CLI exit={result.returncode}; cached values={[row['value'] for row in config]}; logs={directory}")
     return result.returncode, text, config

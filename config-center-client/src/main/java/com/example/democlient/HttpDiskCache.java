@@ -20,24 +20,19 @@ public class HttpDiskCache implements ConfigCache {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final Path file;
-    private final Path legacyFile;
     private final CacheFileMover fileMover;
     private final Map<String, Entry> cache = new ConcurrentHashMap<>();
 
     public HttpDiskCache() {
-        this(
-                Paths.get(System.getProperty("user.home"), ".config-center-client-cache.json"),
-                Paths.get(System.getProperty("user.home"), ".config-center-demo-client-cache.json")
-        );
+        this(Paths.get(System.getProperty("user.home"), ".config-center-client-cache-exact-v1.json"));
     }
 
-    HttpDiskCache(Path file, Path legacyFile) {
-        this(file, legacyFile, Files::move);
+    HttpDiskCache(Path file) {
+        this(file, Files::move);
     }
 
-    HttpDiskCache(Path file, Path legacyFile, CacheFileMover fileMover) {
+    HttpDiskCache(Path file, CacheFileMover fileMover) {
         this.file = file;
-        this.legacyFile = legacyFile;
         this.fileMover = fileMover;
         load();
     }
@@ -66,28 +61,15 @@ public class HttpDiskCache implements ConfigCache {
     }
 
     private void load() {
-        if (Files.exists(file)) {
-            loadFrom(file);
-            return;
-        }
-        if (loadFrom(legacyFile)) {
-            save();
-        }
-    }
-
-    private boolean loadFrom(Path source) {
         try {
-            if (!Files.exists(source) || Files.size(source) == 0) {
-                return false;
+            if (!Files.exists(file) || Files.size(file) == 0) {
+                return;
             }
             Map<String, Entry> loaded = MAPPER.readValue(
-                    Files.readAllBytes(source), new TypeReference<Map<String, Entry>>() {});
-            cache.clear();
+                    Files.readAllBytes(file), new TypeReference<Map<String, Entry>>() {});
             cache.putAll(loaded);
-            return true;
         } catch (Exception e) {
-            System.out.println("WARN: failed to load cache file " + source + ": " + e.getMessage());
-            return false;
+            System.out.println("WARN: failed to load cache file " + file + ": " + e.getMessage());
         }
     }
 

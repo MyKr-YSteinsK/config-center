@@ -43,9 +43,17 @@ final class LoopbackWriteFixture {
     }
 
     CompletableFuture<Call> postAsync(String path, String key, String trace, Map<String, ?> fields) throws Exception {
+        return sendPost(path, key, trace, json.writeValueAsBytes(fields));
+    }
+
+    Call postJson(String path, String key, String trace, String body) throws Exception {
+        return await(sendPost(path, key, trace, body.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private CompletableFuture<Call> sendPost(String path, String key, String trace, byte[] body) {
         return send(request(path).header(TraceIdFilter.HEADER, trace).header("X-API-Key", key)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(fields))).build());
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body)).build());
     }
 
     Call get(String path) throws Exception {

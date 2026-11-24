@@ -1,5 +1,6 @@
 package com.example.configcenter.dto.request;
 
+import com.example.configcenter.validation.UnicodeName;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -12,14 +13,17 @@ public class RollbackFeatureRequest {
 
     @NotBlank
     @Size(max = 100)
+    @UnicodeName
     private String app;
 
     @NotBlank
     @Size(max = 50)
+    @UnicodeName
     private String env;
 
     @NotBlank
     @Size(max = 200)
+    @UnicodeName
     private String name;
 
     @NotNull

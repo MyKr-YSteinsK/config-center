@@ -1,5 +1,6 @@
 package com.example.configcenter.dto.request;
 
+import com.example.configcenter.validation.UnicodeName;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -17,14 +18,17 @@ public class UpsertFeatureRequest {
 
     @NotBlank
     @Size(max = 100)
+    @UnicodeName
     private String app;
 
     @NotBlank
     @Size(max = 50)
+    @UnicodeName
     private String env;
 
     @NotBlank
     @Size(max = 200)
+    @UnicodeName
     private String name;
 
     @NotNull

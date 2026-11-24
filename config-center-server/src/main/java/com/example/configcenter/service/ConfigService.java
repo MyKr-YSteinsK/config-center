@@ -198,6 +198,7 @@ public class ConfigService {
             ConfigItem item, String action, String operator, String reason) {
 
         ConfigItemHistory h = new ConfigItemHistory();
+        h.setOwnerId(item.getId());
 
         h.setApp(item.getApp());
         h.setEnv(item.getEnv());

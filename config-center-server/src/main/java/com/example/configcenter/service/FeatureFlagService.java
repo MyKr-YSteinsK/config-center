@@ -148,6 +148,7 @@ public class FeatureFlagService {
             FeatureFlag ff, String action, String operator, String reason) {
 
         FeatureFlagHistory h = new FeatureFlagHistory();
+        h.setOwnerId(ff.getId());
 
         h.setApp(ff.getApp());
         h.setEnv(ff.getEnv());

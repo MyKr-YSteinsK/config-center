@@ -1,9 +1,13 @@
 package com.example.configcenter;
 
 import com.example.configcenter.config.TraceIdFilter;
+import com.example.configcenter.domain.entity.ConfigItem;
 import com.example.configcenter.domain.entity.ConfigItemHistory;
+import com.example.configcenter.domain.entity.FeatureFlag;
 import com.example.configcenter.domain.entity.FeatureFlagHistory;
 import com.example.configcenter.repository.ConfigItemHistoryRepository;
+import com.example.configcenter.repository.ConfigItemRepository;
+import com.example.configcenter.repository.FeatureFlagRepository;
 import com.example.configcenter.repository.FeatureFlagHistoryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +42,9 @@ class HistoryCursorIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired ConfigItemRepository configItems;
+    @Autowired FeatureFlagRepository flags;
+
     @SpyBean
     private ConfigItemHistoryRepository configHistoryRepository;
 
@@ -48,6 +55,8 @@ class HistoryCursorIntegrationTest {
     void cleanup() {
         featureHistoryRepository.deleteAllInBatch();
         configHistoryRepository.deleteAllInBatch();
+        configItems.deleteAllInBatch();
+        flags.deleteAllInBatch();
         clearInvocations(configHistoryRepository, featureHistoryRepository);
     }
 
@@ -179,9 +188,18 @@ class HistoryCursorIntegrationTest {
     }
 
     private void seedConfigHistory(String key, int count) {
+        var current = new ConfigItem();
+        current.setApp(APP);
+        current.setEnv(ENV);
+        current.setConfigKey(key);
+        current.setConfigValue("value-" + count);
+        current.setVersion(count);
+        current.setUpdatedAt(Instant.ofEpochSecond(count));
+        long ownerId = configItems.saveAndFlush(current).getId();
         List<ConfigItemHistory> history = new ArrayList<>();
         for (int version = 1; version <= count; version++) {
             ConfigItemHistory item = new ConfigItemHistory();
+            item.setOwnerId(ownerId);
             item.setApp(APP);
             item.setEnv(ENV);
             item.setConfigKey(key);
@@ -197,9 +215,20 @@ class HistoryCursorIntegrationTest {
     }
 
     private void seedFeatureHistory(String name, int count) {
+        var current = new FeatureFlag();
+        current.setApp(APP);
+        current.setEnv(ENV);
+        current.setName(name);
+        current.setEnabled(true);
+        current.setRolloutPercentage(50);
+        current.setAllowlist(List.of());
+        current.setVersion(count);
+        current.setUpdatedAt(Instant.ofEpochSecond(count));
+        long ownerId = flags.saveAndFlush(current).getId();
         List<FeatureFlagHistory> history = new ArrayList<>();
         for (int version = 1; version <= count; version++) {
             FeatureFlagHistory item = new FeatureFlagHistory();
+            item.setOwnerId(ownerId);
             item.setApp(APP);
             item.setEnv(ENV);
             item.setName(name);

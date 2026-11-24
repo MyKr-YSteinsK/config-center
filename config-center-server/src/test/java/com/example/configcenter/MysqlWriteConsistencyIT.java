@@ -96,7 +96,7 @@ class MysqlWriteConsistencyIT {
                 "SELECT SUBSTRING_INDEX(CURRENT_USER(), '@', 1)", String.class));
         assertEquals(0, notifier.pendingWaiterCount());
         for (String table : TABLES) {
-            jdbc.update("DELETE FROM " + table + " WHERE app=? AND env=?", APP, ENV);
+            jdbc.update("DELETE FROM " + table + " WHERE app IN (?,?) AND env=?", APP, ALIAS, ENV);
         }
         checkpoints.hook = null;
         http = new LoopbackWriteFixture(mapper, port, watchRequests);
@@ -279,41 +279,60 @@ class MysqlWriteConsistencyIT {
     }
 
     @Test
-    void collatedAliasesCanReachMissingRevisionConcurrentlyWithoutPartialCommit() throws Exception {
-        // One ASCII case change produces different stripe indexes in the current 64-stripe lock.
-        assertNotEquals(Math.floorMod(java.util.Objects.hash(APP, ENV), 64),
-                Math.floorMod(java.util.Objects.hash(ALIAS, ENV), 64));
+    void formerlyCollatedScopesKeepIndependentFirstWrites() throws Exception {
+        var left = Map.of("app", APP, "env", ENV, "key", "subject", "value", "lower");
+        var right = Map.of("app", ALIAS, "env", ENV, "key", "subject", "value", "upper");
+        var bodies = List.of(left, right);
+        var keys = List.of(KEY, "plan05-alias-key");
         try (var gate = new Gate(Set.of(LEFT, RIGHT))) {
             checkpoints.hook = new ReadHook("findForUpdate", gate, ignored -> 1L);
-            var left = start(Domain.CONFIG, "one", 11, null, LEFT);
-            var right = http.postAsync(Domain.CONFIG.path, "plan05-alias-key", RIGHT, Map.of(
-                    "app", ALIAS, "env", ENV, "key", "two", "value", "22",
-                    "description", "candidate-22", "operator", "fixture-right", "reason", RIGHT));
-            var results = race(gate, "different JVM keys both saw no MySQL revision row", 0, left, right);
-            var winner = assertOneWinner(results, 1);
-            assertRevision(1);
-            assertEquals(1, historyRows());
-            assertEquals(1, items(Domain.CONFIG).size());
-            assertCurrentAndHistory(Domain.CONFIG, winner.body().path("data").path("key").asText(),
-                    winner, "UPSERT", winner.trace());
-            assertEquals(1, jdbc.queryForObject(
-                    "SELECT COUNT(*) FROM config_namespace_revision WHERE app=? AND env=?", Integer.class, ALIAS, ENV));
-            verify(notifier, times(1)).notifyChanged(anyString(), eq(ENV), eq(1L));
-            verify(notifier, times(1)).notifyChanged(anyString(), eq(ENV), anyLong());
-            System.out.printf("Plan05 alias first-write HTTP statuses=%s, stored revision app=%s%n",
-                    results.stream().map(LoopbackWriteFixture.Call::status).toList(),
-                    jdbc.queryForObject("SELECT app FROM config_namespace_revision WHERE app=? AND env=?",
-                            String.class, APP, ENV));
-            if (winner.trace().equals(LEFT)) {
-                http.post(Domain.CONFIG.path, "plan05-alias-key", "alias-follow-up", Map.of(
-                        "app", ALIAS, "env", ENV, "key", "two", "value", "22")).expect(200, 0);
-            } else {
-                write(Domain.CONFIG, "one", 11, null, "alias-follow-up").expect(200, 0);
+            var results = race(gate, "exact namespaces both saw no revision row", 0,
+                    http.postAsync(Domain.CONFIG.path, keys.get(0), LEFT, left),
+                    http.postAsync(Domain.CONFIG.path, keys.get(1), RIGHT, right));
+            long successes = results.stream().filter(result -> result.status() == 200).count();
+            assertTrue(successes >= 1);
+            for (int i = 0; i < results.size(); i++) {
+                var result = results.get(i);
+                var body = bodies.get(i);
+                String app = body.get("app");
+                if (result.status() == 409) {
+                    result.expect(409, 4091);
+                    assertExactFreshState(app, body.get("value"), false);
+                    verify(notifier, never()).notifyChanged(eq(app), eq(ENV), anyLong());
+                } else {
+                    assertEquals(1, result.expect(200, 0).path("version").asInt());
+                    assertExactFreshState(app, body.get("value"), true);
+                }
             }
-            assertRevision(2);
-            assertEquals(2, historyRows());
+            for (int i = 0; i < results.size(); i++) {
+                var body = bodies.get(i);
+                if (results.get(i).status() == 409) {
+                    http.post(Domain.CONFIG.path, keys.get(i), "exact-follow-up", body).expect(200, 0);
+                }
+                assertExactFreshState(body.get("app"), body.get("value"), true);
+                verify(notifier).notifyChanged(body.get("app"), ENV, 1);
+                verify(notifier, times(1)).notifyChanged(eq(body.get("app")), eq(ENV), anyLong());
+            }
+            System.out.printf("Plan06 distinct exact namespaces initial successes=%d; both finish v1/revision 1%n", successes);
         } finally {
             checkpoints.hook = null;
+        }
+    }
+
+    private void assertExactFreshState(String app, String value, boolean written) throws Exception {
+        var state = http.get(Domain.CONFIG.path + scope(app, ENV)).expect(200, 0);
+        var journal = http.get(Domain.CONFIG.path + "/history" + scope(app, ENV) + "&key=subject").expect(200, 0);
+        var revisions = jdbc.queryForList("SELECT revision FROM config_namespace_revision WHERE app=? AND env=?",
+                Long.class, app, ENV);
+        assertEquals(written ? List.of(1L) : List.of(), revisions);
+        assertEquals(written ? 1 : 0, state.size());
+        assertEquals(written ? 1 : 0, journal.size());
+        if (written) {
+            assertEquals(app, state.get(0).path("app").asText());
+            assertEquals(app, journal.get(0).path("app").asText());
+            assertEquals(value, state.get(0).path("value").asText());
+            assertEquals(value, journal.get(0).path("value").asText());
+            assertEquals(1, journal.get(0).path("version").asInt());
         }
     }
 

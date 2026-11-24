@@ -1,5 +1,6 @@
 package com.example.configcenter.config;
 
+import com.example.configcenter.validation.UnicodeName;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -37,10 +38,12 @@ public class ApiKeyProperties {
 
         @NotBlank
         @Size(max = 100)
+        @UnicodeName
         private String app;
 
         @NotBlank
         @Size(max = 50)
+        @UnicodeName
         private String env;
 
         public String getKey() {

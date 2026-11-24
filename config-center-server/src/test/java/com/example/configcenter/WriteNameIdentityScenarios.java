@@ -1,9 +1,9 @@
 package com.example.configcenter;
 
 import com.example.configcenter.service.ConfigWatchNotifier;
-import com.example.configcenter.service.FeatureEvaluator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,9 +11,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 import javax.sql.DataSource;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,28 +25,21 @@ import static com.example.configcenter.LoopbackWriteFixture.scope;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "server.address=127.0.0.1", "rate-limit.enabled=false",
-        "security.api-keys[0].key=plan05-base-key", "security.api-keys[0].app=plan05-cafe", "security.api-keys[0].env=dev",
-        "security.api-keys[1].key=plan05-case-key", "security.api-keys[1].app=Plan05-cafe", "security.api-keys[1].env=dev",
-        "security.api-keys[2].key=plan05-other-key", "security.api-keys[2].app=plan05-other", "security.api-keys[2].env=dev"
+        "server.address=127.0.0.1", "rate-limit.enabled=false"
 })
 @Import(LoopbackWriteFixture.WatchRequests.class)
-@Timeout(35)
+@Timeout(70)
 abstract class WriteNameIdentityScenarios {
-    private static final String BASE = "plan05-cafe";
-    private static final String CASE = "Plan05-cafe";
-    private static final String OTHER = "plan05-other";
-    private static final String ENV = "dev";
-    private static final String BASE_KEY = "plan05-base-key";
-    private static final String CASE_KEY = "plan05-case-key";
-    private static final String OTHER_KEY = "plan05-other-key";
-    private static final String NAME = "cafe";
-    private static final String CASE_NAME = "Cafe";
-    private static final String CJK_NAME = "中文旗标";
+    private static final List<String> SPELLINGS = List.of(
+            "cafe", "Cafe", "café", "cafe\u0301", " cafe", "cafe ", "中文", "cafe🌏");
+    private static final Scope OBJECTS = new Scope("identity-objects", "dev");
+    private static final Scope WATCH = new Scope("identity-watch", "dev");
+    private static final Scope WATCH_ALIAS = new Scope("Identity-watch", "Dev");
     private static final String USER = "plan05-user-6";
-    private static final String ALLOWED = "plan05-allowed";
-    private static final List<String> TABLES = List.of("config_item", "config_item_history", "feature_flag",
-            "feature_flag_history", "config_namespace_revision");
+    private static final String ALLOWED = "identity-allowlisted";
+    private static final List<String> TABLES = List.of("config_item_history", "feature_flag_history",
+            "config_item", "feature_flag", "config_namespace_revision");
+    private static final List<Scope> AUTHORIZED = authorizedScopes();
 
     @Autowired JdbcTemplate jdbc;
     @Autowired DataSource dataSource;
@@ -52,198 +48,280 @@ abstract class WriteNameIdentityScenarios {
     @Autowired ConfigWatchNotifier notifier;
     @LocalServerPort int port;
 
-    @Test
-    void compareNameIdentityAtSqlHttpAuthorizationWatchAndEvaluation() throws Exception {
-        boolean mysql;
+    private LoopbackWriteFixture http;
+    private boolean mysql;
+
+    private static List<Scope> authorizedScopes() {
+        List<Scope> scopes = new ArrayList<>();
+        scopes.add(OBJECTS);
+        scopes.add(WATCH);
+        scopes.add(WATCH_ALIAS);
+        for (String name : SPELLINGS) {
+            scopes.add(appScope(name));
+            scopes.add(new Scope("identity-env", name));
+        }
+        return List.copyOf(scopes);
+    }
+
+    private static Scope appScope(String spelling) {
+        String name = spelling.startsWith(" ")
+                ? " identity-app-" + spelling.substring(1) : "identity-app-" + spelling;
+        return new Scope(name, "dev");
+    }
+
+    @DynamicPropertySource
+    static void authorization(DynamicPropertyRegistry registry) {
+        for (int i = 0; i < AUTHORIZED.size(); i++) {
+            Scope scope = AUTHORIZED.get(i);
+            String prefix = "security.api-keys[" + i + "].";
+            registry.add(prefix + "key", scope::key);
+            registry.add(prefix + "app", scope::app);
+            registry.add(prefix + "env", scope::env);
+        }
+    }
+
+    @BeforeEach
+    void prepareFixture() throws Exception {
         try (var connection = dataSource.getConnection()) {
             var metadata = connection.getMetaData();
-            System.out.printf("Plan05 identity engine=%s %s%n", metadata.getDatabaseProductName(),
-                    metadata.getDatabaseProductVersion());
             mysql = metadata.getDatabaseProductName().equals("MySQL");
+            System.out.printf("Exact identity engine=%s %s%n", metadata.getDatabaseProductName(),
+                    metadata.getDatabaseProductVersion());
             if (mysql) {
                 assertEquals("config_center_it", connection.getCatalog());
                 assertNotEquals("root", jdbc.queryForObject(
                         "SELECT SUBSTRING_INDEX(CURRENT_USER(), '@', 1)", String.class));
             } else {
-                assertEquals("H2", metadata.getDatabaseProductName());
                 assertTrue(metadata.getURL().startsWith("jdbc:h2:mem:"));
             }
         }
         for (String table : TABLES) {
-            jdbc.update("DELETE FROM " + table + " WHERE app IN (?,?,?) AND env=?", BASE, CASE, OTHER, ENV);
+            for (Scope scope : AUTHORIZED) {
+                jdbc.update("DELETE FROM " + table + " WHERE app=? AND env=?", scope.app(), scope.env());
+            }
+        }
+        http = new LoopbackWriteFixture(mapper, port, watchRequests);
+    }
+
+    @Test
+    void exactAppEnvKeyAndNameSurviveHttpAndParameterBinding() throws Exception {
+        for (String dimension : List.of("app", "env", "object")) {
+            var targets = SPELLINGS.stream().map(spelling -> switch (dimension) {
+                case "app" -> new Target(appScope(spelling), "subject");
+                case "env" -> new Target(new Scope("identity-env", spelling), "subject");
+                default -> new Target(OBJECTS, spelling);
+            }).toList();
+
+            Target first = targets.get(0);
+            putConfig(first, "value-0");
+            putFlag(first.scope(), first.name(), true, List.of()).expect(200, 0);
+            for (int i = 1; i < targets.size(); i++) {
+                Target target = targets.get(i);
+                readConfig(target).expect(404, 4041);
+                eval(target, USER).expect(404, 4041);
+                assertEquals(0, history("/api/configs/history", target, "key").size());
+                assertEquals(0, history("/api/features/history", target, "name").size());
+                if (!dimension.equals("object")) {
+                    assertEquals(0, list(target.scope()).size());
+                    assertTrue(revisions(target.scope()).isEmpty());
+                }
+                putConfig(target, "value-" + i);
+                putFlag(target.scope(), target.name(), true, List.of()).expect(200, 0);
+            }
+
+            for (int i = 0; i < targets.size(); i++) {
+                Target target = targets.get(i);
+                var config = readConfig(target).expect(200, 0);
+                assertEquals("value-" + i, config.path("value").asText());
+                assertEquals(1, config.path("version").asInt());
+                assertEquals(target.scope().app(), config.path("app").asText());
+                assertEquals(target.scope().env(), config.path("env").asText());
+                assertEquals(target.name(), config.path("key").asText());
+                var flag = eval(target, USER).expect(200, 0);
+                assertEquals(target.name(), flag.path("name").asText());
+                assertEquals(1, history("/api/configs/history", target, "key").size());
+                assertEquals(1, history("/api/features/history", target, "name").size());
+
+                assertParameterizedIdentity("config_item", "config_key", target);
+                assertParameterizedIdentity("feature_flag", "name", target);
+                assertEquals(List.of(dimension.equals("object") ? 8L : 1L), revisions(target.scope()));
+            }
         }
 
-        var http = new LoopbackWriteFixture(mapper, port, watchRequests);
-        putConfig(http, BASE, BASE_KEY, NAME, "base-v1").expect(200, 0);
-        putFlag(http, BASE, BASE_KEY, NAME, true, "base-enabled").expect(200, 0);
         if (mysql) {
-            System.out.println("Plan05 identity collation=" + jdbc.queryForList(
-                    "SELECT table_name, column_name, collation_name FROM information_schema.columns "
-                            + "WHERE table_schema=DATABASE() AND column_name IN ('app','env','config_key','name') "
-                            + "ORDER BY table_name, column_name"));
+            assertMysqlSchema();
         }
+    }
 
-        for (String app : List.of(BASE, CASE, "plan05-café", "plan05-cafe ", OTHER, "计划五")) {
-            observe(http, app, NAME);
+    @Test
+    void admissionWatchAndRolloutFollowTheExactRequestedName() throws Exception {
+        Target lower = new Target(WATCH, "cafe");
+        Target upper = new Target(WATCH_ALIAS, "cafe");
+        try (var original = http.watch(WATCH.app(), WATCH.env(), 0, 12, "exact-original");
+             var alias = http.watch(WATCH_ALIAS.app(), WATCH_ALIAS.env(), 0, 12, "exact-alias")) {
+            http.post("/api/configs", WATCH.key(), "wrong-config", upper.scope().fields("key", upper.name(),
+                    "value", "wrong")).expect(403, 4031);
+            var forgedFlag = lower.scope().fields("name", lower.name(), "enabled", true);
+            forgedFlag.put("rolloutPercentage", 50);
+            http.post("/api/features", WATCH_ALIAS.key(), "wrong-flag", forgedFlag).expect(403, 4031);
+            assertEquals(0, list(WATCH).size());
+            assertEquals(0, list(WATCH_ALIAS).size());
+            assertEquals(0, http.get("/api/features" + WATCH.query()).expect(200, 0).size());
+
+            putConfig(lower, "original");
+            original.expect(true, 1);
+            assertFalse(alias.response().isDone());
+            assertEquals(1, notifier.pendingWaiterCount());
+            putConfig(upper, "separate");
+            alias.expect(true, 1);
         }
-        for (String name : List.of(NAME, CASE_NAME, "café", "cafe ", "tea", CJK_NAME)) {
-            observe(http, BASE, name);
+        assertEquals("original", readConfig(lower).expect(200, 0).path("value").asText());
+        assertEquals("separate", readConfig(upper).expect(200, 0).path("value").asText());
+        assertEquals(List.of(1L), revisions(WATCH));
+        assertEquals(List.of(1L), revisions(WATCH_ALIAS));
+        var caughtUp = http.get("/api/configs/watch" + WATCH.query() + "&sinceVersion=0&timeoutSeconds=1")
+                .expect(200, 0);
+        assertTrue(caughtUp.path("changed").booleanValue());
+        assertEquals(1, caughtUp.path("latestVersion").intValue());
+        try (var current = http.watch(WATCH.app(), WATCH.env(), 1, 1, "exact-current")) {
+            current.expect(false, 1);
         }
-
-        // Each key permits its exact scope. Reads below use the real table comparison.
-        var wrongConfig = putConfig(http, CASE, BASE_KEY, NAME, "denied-config");
-        var wrongFlag = putFlag(http, BASE, CASE_KEY, NAME, false, "denied-flag");
-        wrongConfig.expect(403, 4031);
-        wrongFlag.expect(403, 4031);
-        assertEquals(List.of(1L), revisions(BASE));
-        assertEquals("base-v1", config(http, BASE, NAME).expect(200, 0).path("value").asText());
-        assertTrue(eval(http, BASE, NAME, ALLOWED).expect(200, 0).path("enabled").booleanValue());
-        System.out.printf("Plan05 authority wrong-scope config=%d flag=%d%n", wrongConfig.status(), wrongFlag.status());
-
-        try (var same = http.watch(BASE, ENV, 1, 8, "identity-exact-watch");
-             var independent = http.watch(OTHER, ENV, 0, 3, "identity-isolated-watch")) {
-            putConfig(http, BASE, BASE_KEY, NAME, "base-v2").expect(200, 0);
-            same.expect(true, 2);
-            independent.expect(false, 0);
-            System.out.printf("Plan05 exact Watch changed=true revision=2 trace=%s and isolated Watch changed=false revision=0 trace=%s%n",
-                    same.trace(), independent.trace());
-        }
-
-        var aliasRevisionsBeforeWrite = revisions(CASE);
-        boolean sharedNamespace = !aliasRevisionsBeforeWrite.isEmpty();
-        try (var alreadyParked = http.watch(BASE, ENV, 2, 3, "identity-alias-watch")) {
-            var alias = putConfig(http, CASE, CASE_KEY, CASE_NAME, "alias-write").expect(200, 0);
-            assertEquals(CASE, alias.path("app").asText());
-            assertEquals(CASE_NAME, alias.path("key").asText());
-            var actualWait = LoopbackWriteFixture.await(alreadyParked.response());
-            JsonNode observed = actualWait.expect(200, 0);
-            assertEquals(alreadyParked.trace(), actualWait.trace());
-            assertEquals(1, revisions(CASE).size());
-            long actualBaseRevision = revisions(BASE).get(0);
-            var next = http.get("/api/configs/watch" + scope(BASE, ENV) + "&sinceVersion=2&timeoutSeconds=1");
-            var nextData = next.expect(200, 0);
-            assertEquals(actualBaseRevision > 2, nextData.path("changed").booleanValue());
-            assertEquals(actualBaseRevision, nextData.path("latestVersion").longValue());
-            // If the registered watch timed out, it reports its registration snapshot.
-            assertEquals(observed.path("changed").booleanValue() ? actualBaseRevision : 2,
-                    observed.path("latestVersion").longValue());
-
-            assertEquals(sharedNamespace ? "alias-write" : "base-v2",
-                    config(http, BASE, NAME).expect(200, 0).path("value").asText());
-            assertEquals("alias-write", config(http, CASE, CASE_NAME).expect(200, 0).path("value").asText());
-            String revisionSpelling = jdbc.queryForObject(
-                    "SELECT app FROM config_namespace_revision WHERE app=? AND env=?", String.class, CASE, ENV);
-            System.out.printf("Plan05 alias scope shared=%s write=200 v%d revisionApp=%s waited=%s trace=%s next=%s nextTrace=%s final=%s history=%s%n",
-                    sharedNamespace, alias.path("version").longValue(), revisionSpelling, observed, actualWait.trace(),
-                    nextData, next.trace(), config(http, BASE, NAME).body().path("data"),
-                    spellings(history(http, "/api/configs", BASE, "key", NAME).body().path("data"), "key"));
-        }
-
-        var aliasEval = eval(http, BASE, CASE_NAME, ALLOWED);
-        if (aliasEval.status() == 200) {
-            assertAllowed(aliasEval.expect(200, 0));
-        } else {
-            aliasEval.expect(404, 4041);
-        }
-        var flag = putFlag(http, CASE, CASE_KEY, CASE_NAME, false, "alias-close").expect(200, 0);
-        assertEquals(CASE, flag.path("app").asText());
-        assertEquals(CASE_NAME, flag.path("name").asText());
-        var closed = eval(http, CASE, CASE_NAME, ALLOWED).expect(200, 0);
-        assertFalse(closed.path("enabled").booleanValue());
-        assertEquals(-1, closed.path("bucket").intValue());
-        var flagHistory = history(http, "/api/features", BASE, "name", NAME).expect(200, 0);
-        var baseFlag = http.get("/api/features" + scope(BASE, ENV)).expect(200, 0).get(0);
-        System.out.printf("Plan05 flag exact alias write=200 returned=%s storedBase=%s/%s history=%s closedAllowed=%s%n",
-                spellings(mapper.createArrayNode().add(flag), "name"), baseFlag.path("app").asText(),
-                baseFlag.path("name").asText(), spellings(flagHistory, "name"), closed);
-        assertEquals(sharedNamespace ? 2 : 1, flagHistory.size());
-        assertEquals(sharedNamespace ? CASE_NAME : NAME, baseFlag.path("name").asText());
-
-        var before = revisions(BASE);
-        putConfig(http, OTHER, OTHER_KEY, CJK_NAME, "独立值").expect(200, 0);
-        putFlag(http, OTHER, OTHER_KEY, CJK_NAME, true, "independent-flag").expect(200, 0);
-        assertEquals("独立值", config(http, OTHER, CJK_NAME).expect(200, 0).path("value").asText());
-        assertAllowed(eval(http, OTHER, CJK_NAME, ALLOWED).expect(200, 0));
-        assertEquals(before, revisions(BASE));
-        assertEquals(List.of(1L), revisions(OTHER));
         assertEquals(0, notifier.pendingWaiterCount());
         assertEquals(0, notifier.pendingNamespaceCount());
-    }
 
-    private void observe(LoopbackWriteFixture http, String app, String name) throws Exception {
-        int configRows = rows("config_item", "config_key", app, name);
-        int configHistory = rows("config_item_history", "config_key", app, name);
-        int flagRows = rows("feature_flag", "name", app, name);
-        int flagHistory = rows("feature_flag_history", "name", app, name);
-        var read = config(http, app, name);
-        var flag = eval(http, app, name, USER);
-        assertEquals(configRows == 1 ? 200 : 404, read.status(), read.body()::toString);
-        assertEquals(flagRows == 1 ? 200 : 404, flag.status(), flag.body()::toString);
-        assertEquals(configHistory,
-                history(http, "/api/configs", app, "key", name).expect(200, 0).size());
-        assertEquals(flagHistory,
-                history(http, "/api/features", app, "name", name).expect(200, 0).size());
-
-        String bucket = "n/a";
-        if (flag.status() == 200) {
-            var data = flag.expect(200, 0);
-            int expected = new FeatureEvaluator().stableBucket(USER, name);
-            assertEquals(expected, data.path("bucket").intValue());
-            assertEquals(expected < 50, data.path("enabled").booleanValue());
-            bucket = data.path("bucket").intValue() + "/" + data.path("enabled").booleanValue();
+        Map<String, Integer> buckets = Map.of("cafe", 3, "Cafe", 68, "café", 4, "cafe ", 58);
+        for (var sample : buckets.entrySet()) {
+            putFlag(WATCH, sample.getKey(), true, List.of(ALLOWED)).expect(200, 0);
+            var target = new Target(WATCH, sample.getKey());
+            JsonNode result = eval(target, USER).expect(200, 0);
+            assertEquals(sample.getValue(), result.path("bucket").intValue());
+            assertEquals(sample.getValue() < 50, result.path("enabled").booleanValue());
+            var allowed = eval(target, ALLOWED).expect(200, 0);
+            assertTrue(allowed.path("enabled").booleanValue());
+            assertEquals(-1, allowed.path("bucket").intValue());
         }
-        System.out.printf("Plan05 matrix app=\"%s\" name=\"%s\" javaExact=(%s,%s) sql=(%d,%d,%d,%d,%s) HTTP=(%d,%d) bucket=%s%n",
-                app, name, app.equals(BASE), name.equals(NAME), configRows, configHistory,
-                flagRows, flagHistory, revisions(app), read.status(), flag.status(), bucket);
+        putFlag(WATCH, "cafe", false, List.of(ALLOWED)).expect(200, 0);
+        var off = eval(lower, ALLOWED).expect(200, 0);
+        assertFalse(off.path("enabled").booleanValue());
+        assertEquals(-1, off.path("bucket").intValue());
+        assertEquals(List.of(1L), revisions(WATCH));
     }
 
-    private List<String> spellings(JsonNode rows, String nameField) {
-        List<String> values = new ArrayList<>();
-        for (JsonNode row : rows) {
-            values.add(row.path("version").longValue() + ":" + row.path("app").asText()
-                    + "/" + row.path(nameField).asText());
+    @Test
+    void malformedUnicodeNamesReturnParameterErrorWithoutWriting() throws Exception {
+        for (var request : List.of(
+                new Object[]{"/api/configs", "key", "subject", "value", "v"},
+                new Object[]{"/api/features", "name", "subject", "rolloutPercentage", 25},
+                new Object[]{"/api/configs/rollback", "key", "subject", "targetVersion", 1},
+                new Object[]{"/api/features/rollback", "name", "subject", "targetVersion", 1})) {
+            Map<String, Object> fields = OBJECTS.fields((String) request[1], request[2],
+                    (String) request[3], request[4]);
+            fields.put("enabled", true);
+            for (String field : List.of("app", "env", (String) request[1])) {
+                fields.put(field, "invalid-unicode-marker");
+                String json = mapper.writeValueAsString(fields)
+                        .replace("\"invalid-unicode-marker\"", "\"\\ud800\"");
+                http.postJson((String) request[0], OBJECTS.key(), "invalid-surrogate", json).expect(400, 4001);
+                fields.put(field, switch (field) {
+                    case "app" -> OBJECTS.app();
+                    case "env" -> OBJECTS.env();
+                    default -> "subject";
+                });
+            }
         }
-        return values;
+        assertTrue(revisions(OBJECTS).isEmpty());
+        assertEquals(0, list(OBJECTS).size());
+        assertEquals(0, http.get("/api/features" + OBJECTS.query()).expect(200, 0).size());
     }
 
-    private List<Long> revisions(String app) {
-        return jdbc.queryForList("SELECT revision FROM config_namespace_revision WHERE app=? AND env=?",
-                Long.class, app, ENV);
+    private void assertMysqlSchema() {
+        assertEquals("NO PAD", jdbc.queryForObject("""
+                SELECT PAD_ATTRIBUTE FROM information_schema.collations WHERE collation_name='utf8mb4_0900_bin'
+                """, String.class));
+        assertEquals("utf8mb4", jdbc.queryForObject("SELECT @@character_set_connection", String.class));
+        for (String table : List.of("config_item", "feature_flag", "config_namespace_revision")) {
+            var keys = jdbc.queryForList("""
+                    SELECT CONCAT(column_name, ':', character_maximum_length, ':', collation_name, ':', is_nullable)
+                    FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=?
+                        AND column_name IN ('app','env','config_key','name') ORDER BY column_name
+                    """, String.class, table);
+            List<String> expected = switch (table) {
+                case "config_item" -> List.of("app:100", "config_key:200", "env:50");
+                case "feature_flag" -> List.of("app:100", "env:50", "name:200");
+                default -> List.of("app:100", "env:50");
+            };
+            assertEquals(expected.stream().map(column -> column + ":utf8mb4_0900_bin:NO").toList(), keys);
+        }
+        for (String index : List.of("uk_cfg_hist_owner_ver", "uk_ff_hist_owner_ver")) {
+            assertEquals(List.of("owner_id", "version"), jdbc.queryForList("""
+                    SELECT column_name FROM information_schema.statistics
+                    WHERE table_schema=DATABASE() AND index_name=? AND non_unique=0 ORDER BY seq_in_index
+                    """, String.class, index));
+        }
+        assertEquals("utf8mb4_unicode_ci", jdbc.queryForObject("""
+                SELECT collation_name FROM information_schema.columns
+                WHERE table_schema=DATABASE() AND table_name='config_item' AND column_name='config_value'
+                """, String.class));
     }
 
-    private int rows(String table, String nameField, String app, String name) {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE app=? AND env=? AND " + nameField + "=?",
-                Integer.class, app, ENV, name);
+    private void assertParameterizedIdentity(String table, String nameColumn, Target target) {
+        var rows = jdbc.queryForList("SELECT app,env," + nameColumn + " FROM " + table
+                        + " WHERE app=? AND env=? AND " + nameColumn + "=?",
+                target.scope().app(), target.scope().env(), target.name());
+        assertEquals(1, rows.size());
+        assertEquals(target.scope().app(), rows.get(0).get("app"));
+        assertEquals(target.scope().env(), rows.get(0).get("env"));
+        assertEquals(target.name(), rows.get(0).get(nameColumn));
     }
 
-    private void assertAllowed(JsonNode data) {
-        assertTrue(data.path("enabled").booleanValue());
-        assertEquals(-1, data.path("bucket").intValue());
+    private void putConfig(Target target, String value) throws Exception {
+        var scope = target.scope();
+        http.post("/api/configs", scope.key(), "exact-write",
+                scope.fields("key", target.name(), "value", value)).expect(200, 0);
     }
 
-    private LoopbackWriteFixture.Call putConfig(LoopbackWriteFixture http, String app, String key, String name,
-                                                 String value) throws Exception {
-        return http.post("/api/configs", key, value.startsWith("独立") ? "cjk-write" : value,
-                Map.of("app", app, "env", ENV, "key", name, "value", value));
-    }
-
-    private LoopbackWriteFixture.Call putFlag(LoopbackWriteFixture http, String app, String key, String name,
-                                               boolean enabled, String trace) throws Exception {
-        return http.post("/api/features", key, trace, Map.of("app", app, "env", ENV, "name", name,
-                "enabled", enabled, "rolloutPercentage", 50, "allowlist", List.of(ALLOWED)));
-    }
-
-    private LoopbackWriteFixture.Call history(LoopbackWriteFixture http, String path, String app,
-                                               String field, String name) throws Exception {
-        return http.get(path + "/history" + scope(app, ENV) + "&" + field + "=" + encode(name));
-    }
-
-    private LoopbackWriteFixture.Call config(LoopbackWriteFixture http, String app, String name) throws Exception {
-        return http.get("/api/configs/" + encode(name).replace("+", "%20") + scope(app, ENV));
-    }
-
-    private LoopbackWriteFixture.Call eval(LoopbackWriteFixture http, String app, String name, String user)
+    private LoopbackWriteFixture.Call putFlag(Scope scope, String name, boolean enabled, List<String> allowlist)
             throws Exception {
-        return http.get("/api/features/evaluate" + scope(app, ENV) + "&name=" + encode(name) + "&userId=" + encode(user));
+        var body = scope.fields("name", name, "enabled", enabled);
+        body.put("allowlist", allowlist);
+        body.put("rolloutPercentage", 50);
+        return http.post("/api/features", scope.key(), "exact-feature", body);
+    }
+
+    private JsonNode list(Scope scope) throws Exception {
+        return http.get("/api/configs" + scope.query()).expect(200, 0);
+    }
+
+    private JsonNode history(String route, Target target, String field) throws Exception {
+        return http.get(route + target.scope().query() + "&" + field + "=" + encode(target.name())).expect(200, 0);
+    }
+
+    private LoopbackWriteFixture.Call readConfig(Target target) throws Exception {
+        return http.get("/api/configs/" + encode(target.name()).replace("+", "%20") + target.scope().query());
+    }
+
+    private LoopbackWriteFixture.Call eval(Target target, String user) throws Exception {
+        return http.get("/api/features/evaluate" + target.scope().query()
+                + "&name=" + encode(target.name()) + "&userId=" + encode(user));
+    }
+
+    private List<Long> revisions(Scope scope) {
+        return jdbc.queryForList("SELECT revision FROM config_namespace_revision WHERE app=? AND env=?",
+                Long.class, scope.app(), scope.env());
+    }
+
+    private record Target(Scope scope, String name) {}
+    private record Scope(String app, String env) {
+        String query() {
+            return scope(app, env);
+        }
+
+        String key() {
+            return "exact-fixture-" + AUTHORIZED.indexOf(this);
+        }
+
+        Map<String, Object> fields(String name, Object value, String other, Object otherValue) {
+            return new HashMap<>(Map.of("app", app, "env", env, name, value, other, otherValue));
+        }
     }
 }

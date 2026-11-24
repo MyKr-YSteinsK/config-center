@@ -12,6 +12,7 @@ import com.example.configcenter.exception.ErrorCode;
 import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.ConfigService;
 import com.example.configcenter.service.ConfigWatchNotifier;
+import com.example.configcenter.validation.UnicodeName;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -56,8 +57,8 @@ public class ConfigController {
     // 配置列表支持 If-None-Match，这样客户端没命中更新时可以直接拿 304，省 body 也省流量。
     @GetMapping("/configs")
     public ResponseEntity<?> list(
-            @RequestParam @NotBlank @Size(max = 100) String app,
-            @RequestParam @NotBlank @Size(max = 50) String env,
+            @RequestParam @NotBlank @Size(max = 100) @UnicodeName String app,
+            @RequestParam @NotBlank @Size(max = 50) @UnicodeName String env,
             @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch) {
 
         ConfigService.ConfigListSnapshot snapshot = service.listSnapshot(app, env);
@@ -78,17 +79,17 @@ public class ConfigController {
      * 不然像 db.pool.size 这种带点的 key，Spring 会把后半截当扩展名吃掉。
      */
     @GetMapping("/configs/{key:.+}")
-    public ApiResponse<ConfigItemDto> getOne(@PathVariable @Size(max = 200) String key,
-                                             @RequestParam @NotBlank @Size(max = 100) String app,
-                                             @RequestParam @NotBlank @Size(max = 50) String env) {
+    public ApiResponse<ConfigItemDto> getOne(@PathVariable @Size(max = 200) @UnicodeName String key,
+                                             @RequestParam @NotBlank @Size(max = 100) @UnicodeName String app,
+                                             @RequestParam @NotBlank @Size(max = 50) @UnicodeName String env) {
         return ApiResponse.ok(service.getOne(app, env, key));
     }
 
     @GetMapping("/configs/history")
     public ApiResponse<List<ConfigHistoryDto>> history(
-            @RequestParam @NotBlank @Size(max = 100) String app,
-            @RequestParam @NotBlank @Size(max = 50) String env,
-            @RequestParam @NotBlank @Size(max = 200) String key,
+            @RequestParam @NotBlank @Size(max = 100) @UnicodeName String app,
+            @RequestParam @NotBlank @Size(max = 50) @UnicodeName String env,
+            @RequestParam @NotBlank @Size(max = 200) @UnicodeName String key,
             @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit,
             @RequestParam(required = false) @Positive Long beforeVersion) {
         return ApiResponse.ok(service.history(app, env, key, limit, beforeVersion));
@@ -111,8 +112,8 @@ public class ConfigController {
     // watch 走长轮询：有更新就立即返回，没更新就先挂住，直到超时或者被通知唤醒。
     @GetMapping("/configs/watch")
     public DeferredResult<ResponseEntity<ApiResponse<ConfigWatchDto>>> watch(
-            @RequestParam @NotBlank @Size(max = 100) String app,
-            @RequestParam @NotBlank @Size(max = 50) String env,
+            @RequestParam @NotBlank @Size(max = 100) @UnicodeName String app,
+            @RequestParam @NotBlank @Size(max = 50) @UnicodeName String env,
             @RequestParam @PositiveOrZero long sinceVersion,
             @RequestParam(defaultValue = "30") @Min(1) @Max(60) int timeoutSeconds,
             @RequestAttribute(TraceIdFilter.REQUEST_ATTRIBUTE) String traceId) {

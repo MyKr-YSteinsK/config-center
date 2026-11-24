@@ -89,10 +89,12 @@ class MysqlPersistenceIT {
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank",
                 String.class);
 
-        assertEquals(List.of("1", "2", "3"), appliedVersions);
+        assertEquals(List.of("1", "2", "3", "4"), appliedVersions);
         assertEquals(0, flyway.migrate().migrationsExecuted);
-        assertIndexExists("uk_cfg_hist_app_env_key_ver", 0);
-        assertIndexExists("uk_ff_hist_app_env_name_ver", 0);
+        assertIndexExists("uk_cfg_hist_owner_ver", 0);
+        assertIndexDoesNotExist("uk_cfg_hist_app_env_key_ver");
+        assertIndexExists("uk_ff_hist_owner_ver", 0);
+        assertIndexDoesNotExist("uk_ff_hist_app_env_name_ver");
         assertIndexDoesNotExist("idx_cfg_hist_app_env_key_ver");
         assertIndexDoesNotExist("idx_ff_hist_app_env_name_ver");
         assertEquals(0, configRepository.count());
@@ -256,22 +258,32 @@ class MysqlPersistenceIT {
 
     private void insertConfigHistory(String key, long version) {
         jdbcTemplate.update("""
+                INSERT INTO config_item (app,env,config_key,config_value,version,lock_version,updated_at)
+                SELECT 'history-app','dev',?,'value',55,0,CURRENT_TIMESTAMP(6)
+                WHERE NOT EXISTS (SELECT 1 FROM config_item WHERE app='history-app' AND env='dev' AND config_key=?)
+                """, key, key);
+        jdbcTemplate.update("""
                 INSERT INTO config_item_history
-                    (app, env, config_key, config_value, description, version,
-                     action, operator, reason, created_at)
-                VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, CURRENT_TIMESTAMP(6))
-                """, "history-app", "dev", key, "value", version,
-                "UPSERT", "mysql-it", "history uniqueness test");
+                    (owner_id,app,env,config_key,config_value,version,action,operator,reason,created_at)
+                SELECT id,app,env,config_key,'value',?,'UPSERT','mysql-it','history fixture',CURRENT_TIMESTAMP(6)
+                FROM config_item WHERE app='history-app' AND env='dev' AND config_key=?
+                """, version, key);
     }
 
     private void insertFeatureHistory(String name, long version) {
         jdbcTemplate.update("""
+                INSERT INTO feature_flag
+                    (app,env,name,enabled,rollout_percentage,allowlist_json,version,lock_version,updated_at)
+                SELECT 'history-app','dev',?,true,50,'[]',55,0,CURRENT_TIMESTAMP(6)
+                WHERE NOT EXISTS (SELECT 1 FROM feature_flag WHERE app='history-app' AND env='dev' AND name=?)
+                """, name, name);
+        jdbcTemplate.update("""
                 INSERT INTO feature_flag_history
-                    (app, env, name, enabled, rollout_percentage, allowlist_json, version,
-                     action, operator, reason, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(6))
-                """, "history-app", "dev", name, true, 50, "[]", version,
-                "UPSERT", "mysql-it", "history uniqueness test");
+                    (owner_id,app,env,name,enabled,rollout_percentage,allowlist_json,version,
+                     action,operator,reason,created_at)
+                SELECT id,app,env,name,true,50,'[]',?,'UPSERT','mysql-it','history fixture',CURRENT_TIMESTAMP(6)
+                FROM feature_flag WHERE app='history-app' AND env='dev' AND name=?
+                """, version, name);
     }
 
     private UpsertConfigRequest configRequest(String key, String value, String description) {

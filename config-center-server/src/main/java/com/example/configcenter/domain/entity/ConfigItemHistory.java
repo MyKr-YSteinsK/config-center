@@ -10,19 +10,16 @@ import java.time.Instant;
  */
 @Entity
 @Table(name = "config_item_history",
-        uniqueConstraints = {
-                @UniqueConstraint(name = "uk_cfg_hist_app_env_key_ver",
-                        columnNames = {"app", "env", "config_key", "version"})
-        },
-        indexes = {
-                @Index(name = "idx_cfg_hist_app_env_key", columnList = "app, env, config_key")
-        }
-)
+        uniqueConstraints = @UniqueConstraint(name = "uk_cfg_hist_owner_ver", columnNames = {"owner_id", "version"}))
 public class ConfigItemHistory {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // The current row's identity controls lookup. Original names below are audit data.
+    @Column(name = "owner_id", nullable = false)
+    private long ownerId;
 
     @Column(nullable = false, length = 100)
     private String app;
@@ -57,6 +54,8 @@ public class ConfigItemHistory {
     private Instant createdAt;
 
     public Long getId() { return id; }
+
+    public void setOwnerId(long ownerId) { this.ownerId = ownerId; }
 
     public String getApp() { return app; }
     public void setApp(String app) { this.app = app; }
