@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from typing import Optional
 from urllib.parse import quote, urlencode, urlsplit
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -29,6 +30,7 @@ class Reply:
     status: int
     trace: str
     body: dict
+    replayed: Optional[str] = None
 
     def expect(self, status=200, code=0):
         assert self.status == status and self.body["code"] == code, self
@@ -41,7 +43,8 @@ def request(port, method, route, body=None, headers=None):
     try:
         client.request(method, route, body=body, headers=headers or {})
         response = client.getresponse()
-        return Reply(response.status, response.getheader(TRACE), json.loads(response.read()))
+        return Reply(response.status, response.getheader(TRACE), json.loads(response.read()),
+                     response.getheader("Idempotency-Replayed"))
     finally:
         client.close()
 
@@ -87,13 +90,13 @@ def resolve_java():
 
 
 @contextmanager
-def server(profile, app, key, directory, environment):
+def server(profile, app, key, directory, environment, *, jar=None):
     env = {**environment, "JAVA_TOOL_OPTIONS": f'-Djava.io.tmpdir="{directory.as_posix()}"'}
     java = resolve_java()
     log = directory / "server.log"
     with log.open("wb") as output:
         process = subprocess.Popen(
-            [str(java), "-jar", str(JAR), "--spring.profiles.active=" + profile,
+            [str(java), "-jar", str(jar or JAR), "--spring.profiles.active=" + profile,
              "--server.address=127.0.0.1", "--server.port=0", "--rate-limit.enabled=false",
              "--security.api-keys[0].key=" + key,
              "--security.api-keys[0].app=" + app, "--security.api-keys[0].env=" + ENV],
@@ -114,10 +117,11 @@ def server(profile, app, key, directory, environment):
 
 
 class DropWriteResponse(HTTPServer):
-    def __init__(self, upstream, forward):
+    def __init__(self, upstream, forward, route):
         super().__init__(("127.0.0.1", 0), DropHandler)
         self.upstream = upstream
         self.forward = forward
+        self.route = route
         self.attempts = 0
         self.forwarded = 0
         self.receipt = None
@@ -128,7 +132,7 @@ class DropWriteResponse(HTTPServer):
         assert self.attempts == 1, "The fixture routes one attempt"
         if self.forward:
             self.forwarded += 1
-            self.receipt = request(self.upstream, "POST", CONFIGS, payload, headers)
+            self.receipt = request(self.upstream, "POST", self.route, payload, headers)
             self.receipt.expect()
             assert self.receipt.trace == headers[TRACE]
         self.done.set()
@@ -136,9 +140,11 @@ class DropWriteResponse(HTTPServer):
 
 class DropHandler(BaseHTTPRequestHandler):
     def do_POST(self):
-        assert self.path == CONFIGS
+        assert self.path == self.server.route
         payload = self.rfile.read(int(self.headers["Content-Length"]))
         headers = {name: self.headers[name] for name in ("Content-Type", "X-API-Key", TRACE)}
+        if "Idempotency-Key" in self.headers:
+            headers["Idempotency-Key"] = self.headers["Idempotency-Key"]
         self.server.drop(payload, headers)
         # Close the caller connection without sending a response.
         self.close_connection = True
@@ -147,14 +153,14 @@ class DropHandler(BaseHTTPRequestHandler):
         pass
 
 
-def drop(port, payload, headers, forward):
-    with DropWriteResponse(port, forward) as proxy:
+def drop(port, payload, headers, forward, route=CONFIGS):
+    with DropWriteResponse(port, forward, route) as proxy:
         worker = threading.Thread(target=proxy.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
         worker.start()
         try:
             caller_error = None
             try:
-                request(proxy.server_port, "POST", CONFIGS, payload, headers)
+                request(proxy.server_port, "POST", route, payload, headers)
             except http.client.RemoteDisconnected as lost:
                 caller_error = type(lost).__name__
             assert caller_error == "RemoteDisconnected"
@@ -165,6 +171,7 @@ def drop(port, payload, headers, forward):
                 print(f"Injector: forwarded=1 upstream_status={proxy.receipt.status} upstream_trace={proxy.receipt.trace}")
             else:
                 print("Injector: forwarded=0")
+            return proxy.receipt
         finally:
             proxy.shutdown()
             worker.join(timeout=3)

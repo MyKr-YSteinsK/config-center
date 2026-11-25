@@ -212,7 +212,7 @@ def check_preserved(sql, old_rows, old_versions):
                 assert new[1:3] == list(TARGET)
                 assert old[:1] + old[3:] == new[:1] + new[3:], (table, old[0])
     post = versions(sql)
-    assert post[:3] == old_versions and [(row[0], row[2]) for row in post] == [(str(i), "1") for i in range(1, 5)]
+    assert post[:3] == old_versions and [(row[0], row[2]) for row in post] == [(str(i), "1") for i in range(1, 6)]
     assert sql.select("SELECT app,env,revision,lock_version FROM config_namespace_revision") == [[*TARGET, "4", "3"]]
     assert sql.select("""
         SELECT COUNT(*) FROM config_item_history h JOIN config_item c ON h.owner_id=c.id
@@ -363,7 +363,7 @@ def main():
     qa.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="rehearsal-", dir=qa))
     print(f"V3 SHA-256={hashlib.sha256(baseline.read_bytes()).hexdigest()}")
-    print(f"V4 SHA-256={hashlib.sha256(JAR.read_bytes()).hexdigest()}")
+    print(f"Candidate JAR SHA-256={hashlib.sha256(JAR.read_bytes()).hexdigest()}")
     print(f"Fixture artifacts: {directory}", flush=True)
     jars = Jars(baseline, directory)
     dump = directory / "backup-v3.sql"
@@ -422,7 +422,7 @@ def main():
             exercise_http(jars, port, sql, bucket)
         with jars.serving(JAR, env, "v4-restarted") as port:
             assert get(port, "/api/configs/cafe", ORIGINAL).expect()["version"] == 1
-            assert len(versions(sql)) == 4
+            assert len(versions(sql)) == 5
         print("V4 restarted through Flyway and Hibernate without another migration.")
 
 

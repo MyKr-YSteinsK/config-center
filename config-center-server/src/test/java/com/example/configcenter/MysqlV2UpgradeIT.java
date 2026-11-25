@@ -73,8 +73,10 @@ class MysqlV2UpgradeIT {
                 var source = latest.getConfiguration().getDataSource();
                 JdbcTemplate db = new JdbcTemplate(source);
                 assertEquals("config_center_it", db.queryForObject("SELECT DATABASE()", String.class));
-                assertNotEquals("root", db.queryForObject("SELECT SUBSTRING_INDEX(CURRENT_USER(), '@', 1)", String.class));
+                assertFalse("root".equalsIgnoreCase(db.queryForObject(
+                        "SELECT SUBSTRING_INDEX(CURRENT_USER(), '@', 1)", String.class)));
                 // Only the application's test tables are reset. The mysql-it suites run serially.
+                db.execute("DROP TABLE IF EXISTS write_receipt");
                 for (String table : TABLES) {
                     db.execute("DROP TABLE IF EXISTS " + table);
                 }
@@ -98,10 +100,11 @@ class MysqlV2UpgradeIT {
                 assertEquals(earlierMigrations, migrationIdentity(db).subList(0, 2));
                 var throughV3 = migrationIdentity(db);
                 assertEquals(3, throughV3.size());
-                assertEquals(1, latest.migrate().migrationsExecuted);
-                latest.validate();
+                var v4 = Flyway.configure().configuration(latest.getConfiguration()).target("4").load();
+                assertEquals(1, v4.migrate().migrationsExecuted);
+                v4.validate();
                 assertEquals(rows, snapshot(db));
-                assertEquals(throughV3, migrationIdentity(db));
+                assertEquals(throughV3, migrationIdentity(db).subList(0, 3));
                 assertEquals(5, db.queryForObject("""
                         SELECT COUNT(*) FROM config_item_history h JOIN config_item c ON c.id=h.owner_id
                         WHERE c.app='legacy' AND c.env='dev' AND c.config_key='k'
@@ -110,6 +113,16 @@ class MysqlV2UpgradeIT {
                         SELECT COUNT(*) FROM feature_flag_history h JOIN feature_flag f ON f.id=h.owner_id
                         WHERE f.app='legacy' AND f.env='dev' AND f.name='f'
                         """, Integer.class));
+                var throughV4 = migrationIdentity(db);
+                assertEquals(4, throughV4.size());
+                var v4Rows = fullSnapshot(db);
+                var v4Indexes = indexes(db);
+                assertEquals(1, latest.migrate().migrationsExecuted);
+                latest.validate();
+                assertEquals(v4Rows, fullSnapshot(db));
+                assertEquals(v4Indexes, indexes(db));
+                assertEquals(throughV4, migrationIdentity(db));
+                assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM write_receipt", Integer.class));
                 assertEquals(0, latest.migrate().migrationsExecuted);
                 // Boot next validates the upgraded schema, then the test calls both rollback services.
             };
@@ -153,10 +166,15 @@ class MysqlV2UpgradeIT {
             }).toList();
         }
 
+        private static List<List<Map<String, Object>>> fullSnapshot(JdbcTemplate db) {
+            return TABLES.stream().map(t -> db.queryForList("SELECT * FROM " + t + " ORDER BY id")).toList();
+        }
+
         private static List<Map<String, Object>> indexes(JdbcTemplate db) {
             return db.queryForList("""
                     SELECT table_name, index_name, non_unique, seq_in_index, column_name
-                    FROM information_schema.statistics WHERE table_schema = DATABASE()
+                    FROM information_schema.statistics
+                    WHERE table_schema = DATABASE() AND table_name <> 'write_receipt'
                     ORDER BY table_name, index_name, seq_in_index
                     """);
         }
@@ -164,7 +182,7 @@ class MysqlV2UpgradeIT {
         private static List<Map<String, Object>> migrationIdentity(JdbcTemplate db) {
             return db.queryForList("""
                     SELECT version, script, checksum FROM flyway_schema_history
-                    WHERE version IN ('1','2','3') AND success = 1 ORDER BY installed_rank
+                    WHERE version IN ('1','2','3','4') AND success = 1 ORDER BY installed_rank
                     """);
         }
 

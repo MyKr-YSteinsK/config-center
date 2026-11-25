@@ -75,7 +75,10 @@ class MysqlPersistenceIT {
             assertEquals(DATABASE, connection.getCatalog(),
                     "mysql-it may delete data only from the dedicated integration schema");
         }
+        assertFalse("root".equalsIgnoreCase(jdbcTemplate.queryForObject(
+                "SELECT SUBSTRING_INDEX(CURRENT_USER(), '@', 1)", String.class)));
 
+        jdbcTemplate.update("DELETE FROM write_receipt");
         featureHistoryRepository.deleteAllInBatch();
         featureRepository.deleteAllInBatch();
         configHistoryRepository.deleteAllInBatch();
@@ -89,7 +92,8 @@ class MysqlPersistenceIT {
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank",
                 String.class);
 
-        assertEquals(List.of("1", "2", "3", "4"), appliedVersions);
+        assertEquals(List.of("1", "2", "3", "4", "5"), appliedVersions);
+        flyway.validate();
         assertEquals(0, flyway.migrate().migrationsExecuted);
         assertIndexExists("uk_cfg_hist_owner_ver", 0);
         assertIndexDoesNotExist("uk_cfg_hist_app_env_key_ver");
@@ -97,6 +101,22 @@ class MysqlPersistenceIT {
         assertIndexDoesNotExist("uk_ff_hist_app_env_name_ver");
         assertIndexDoesNotExist("idx_cfg_hist_app_env_key_ver");
         assertIndexDoesNotExist("idx_ff_hist_app_env_name_ver");
+        assertIndexExists("uk_write_receipt_scope_key", 0);
+        assertEquals(List.of("app", "env", "request_key"), jdbcTemplate.queryForList("""
+                SELECT column_name FROM information_schema.statistics
+                WHERE table_schema=DATABASE() AND index_name='uk_write_receipt_scope_key'
+                ORDER BY seq_in_index
+                """, String.class));
+        assertEquals(List.of("app:utf8mb4_0900_bin:100:NO", "env:utf8mb4_0900_bin:50:NO",
+                "request_key:varbinary:128:NO", "result_json:text:65535:YES"), jdbcTemplate.queryForList("""
+                SELECT CONCAT(column_name, ':', IF(column_name IN ('app','env'), collation_name, data_type), ':',
+                              IF(column_name='result_json', character_octet_length, character_maximum_length),
+                              ':', is_nullable)
+                FROM information_schema.columns
+                WHERE table_schema=DATABASE() AND table_name='write_receipt'
+                AND column_name IN ('app', 'env', 'request_key', 'result_json')
+                ORDER BY ordinal_position
+                """, String.class));
         assertEquals(0, configRepository.count());
     }
 

@@ -8,9 +8,17 @@ import com.example.configcenter.dto.response.FeatureFlagDto;
 import com.example.configcenter.dto.response.FeatureHistoryDto;
 import com.example.configcenter.exception.BizException;
 import com.example.configcenter.exception.ErrorCode;
+import com.example.configcenter.receipt.IdempotentWrites;
+import com.example.configcenter.receipt.WriteIntent;
 import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.FeatureFlagService;
 import com.example.configcenter.validation.UnicodeName;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Max;
@@ -18,6 +26,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,18 +38,25 @@ public class FeatureController {
 
     private final FeatureFlagService service;
     private final ApiKeyService apiKeyService;
+    private final IdempotentWrites writes;
 
-    public FeatureController(FeatureFlagService service, ApiKeyService apiKeyService) {
+    public FeatureController(FeatureFlagService service, ApiKeyService apiKeyService, IdempotentWrites writes) {
         this.service = service;
         this.apiKeyService = apiKeyService;
+        this.writes = writes;
     }
 
     @PostMapping
-    public ApiResponse<FeatureFlagDto> upsert(
+    @Operation(parameters = @Parameter(name = IdempotentWrites.KEY, in = ParameterIn.HEADER,
+            description = IdempotentWrites.KEY_DESCRIPTION, schema = @Schema(pattern = IdempotentWrites.KEY_PATTERN)))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", useReturnTypeSchema = true,
+            headers = @Header(name = IdempotentWrites.REPLAYED, description = "True for a replay, false for a new numbered write.",
+                    schema = @Schema(type = "boolean")))
+    public ResponseEntity<ApiResponse<FeatureFlagDto>> upsert(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
-            @Valid @RequestBody UpsertFeatureRequest req) {
+            @Valid @RequestBody UpsertFeatureRequest req, HttpServletRequest request) {
         authorize(apiKey, req.getApp(), req.getEnv());
-        return ApiResponse.ok(service.upsert(req));
+        return writes.respond(request, () -> WriteIntent.of(req), FeatureFlagDto.class, () -> service.upsert(req));
     }
 
     @GetMapping
@@ -72,11 +88,16 @@ public class FeatureController {
 
     // 这里的回滚思路和配置项一致：不是把旧记录改回来，而是生成一条新的当前版本。
     @PostMapping("/rollback")
-    public ApiResponse<FeatureFlagDto> rollback(
+    @Operation(parameters = @Parameter(name = IdempotentWrites.KEY, in = ParameterIn.HEADER,
+            description = IdempotentWrites.KEY_DESCRIPTION, schema = @Schema(pattern = IdempotentWrites.KEY_PATTERN)))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", useReturnTypeSchema = true,
+            headers = @Header(name = IdempotentWrites.REPLAYED, description = "True for a replay, false for a new numbered write.",
+                    schema = @Schema(type = "boolean")))
+    public ResponseEntity<ApiResponse<FeatureFlagDto>> rollback(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
-            @Valid @RequestBody RollbackFeatureRequest req) {
+            @Valid @RequestBody RollbackFeatureRequest req, HttpServletRequest request) {
         authorize(apiKey, req.getApp(), req.getEnv());
-        return ApiResponse.ok(service.rollback(req));
+        return writes.respond(request, () -> WriteIntent.of(req), FeatureFlagDto.class, () -> service.rollback(req));
     }
 
     private void authorize(String apiKey, String app, String env) {

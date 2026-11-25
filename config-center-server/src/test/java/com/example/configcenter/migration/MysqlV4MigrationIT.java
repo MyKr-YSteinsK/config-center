@@ -74,6 +74,7 @@ class MysqlV4MigrationIT {
 
     private static void resetFixture() {
         // The Maven mysql-it profile runs these suites serially on its own throwaway database.
+        jdbc.execute("DROP TABLE IF EXISTS write_receipt");
         for (String table : TABLES) {
             jdbc.execute("DROP TABLE IF EXISTS " + table);
         }
@@ -258,7 +259,8 @@ class MysqlV4MigrationIT {
     }
 
     private static Flyway latest(ApiKeyProperties auth, String file) {
-        return Flyway.configure().dataSource(dataSource).javaMigrations(new V4__ExactNames(auth, file)).load();
+        return Flyway.configure().dataSource(dataSource).target("4")
+                .javaMigrations(new V4__ExactNames(auth, file)).load();
     }
 
     private static List<Map<String, Object>> migrationIdentity() {

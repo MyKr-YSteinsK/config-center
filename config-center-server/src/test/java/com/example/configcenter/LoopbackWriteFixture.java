@@ -13,6 +13,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -24,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-final class LoopbackWriteFixture {
+public final class LoopbackWriteFixture {
 
     private final HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(5)).build();
@@ -32,35 +33,47 @@ final class LoopbackWriteFixture {
     private final int port;
     private final WatchRequests watchRequests;
 
-    LoopbackWriteFixture(ObjectMapper json, int port, WatchRequests watchRequests) {
+    public LoopbackWriteFixture(ObjectMapper json, int port, WatchRequests watchRequests) {
         this.json = json;
         this.port = port;
         this.watchRequests = watchRequests;
     }
 
-    Call post(String path, String key, String trace, Map<String, ?> fields) throws Exception {
-        return await(postAsync(path, key, trace, fields));
+    public Call post(String path, String key, String trace, Map<String, ?> fields, String... receiptKeys) throws Exception {
+        return await(postAsync(path, key, trace, fields, receiptKeys));
     }
 
-    CompletableFuture<Call> postAsync(String path, String key, String trace, Map<String, ?> fields) throws Exception {
-        return sendPost(path, key, trace, json.writeValueAsBytes(fields));
+    public CompletableFuture<Call> postAsync(String path, String key, String trace, Map<String, ?> fields,
+                                             String... receiptKeys) throws Exception {
+        return sendPost(path, key, trace, json.writeValueAsBytes(fields), receiptKeys);
     }
 
-    Call postJson(String path, String key, String trace, String body) throws Exception {
-        return await(sendPost(path, key, trace, body.getBytes(StandardCharsets.UTF_8)));
+    public Call postJson(String path, String key, String trace, String body, String... receiptKeys) throws Exception {
+        return await(sendPost(path, key, trace, body.getBytes(StandardCharsets.UTF_8), receiptKeys));
     }
 
-    private CompletableFuture<Call> sendPost(String path, String key, String trace, byte[] body) {
-        return send(request(path).header(TraceIdFilter.HEADER, trace).header("X-API-Key", key)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body)).build());
+    private CompletableFuture<Call> sendPost(String path, String key, String trace, byte[] body, String[] receiptKeys) {
+        var builder = request(path).header(TraceIdFilter.HEADER, trace).header("Content-Type", "application/json");
+        if (key != null) {
+            builder.header("X-API-Key", key);
+        }
+        for (String receiptKey : receiptKeys) {
+            builder.header("Idempotency-Key", receiptKey);
+        }
+        return send(builder.POST(HttpRequest.BodyPublishers.ofByteArray(body)).build());
     }
 
-    Call get(String path) throws Exception {
-        return await(send(request(path).GET().build()));
+    public Call get(String path) throws Exception {
+        return get(path, Map.of());
     }
 
-    Watch watch(String app, String env, long since, int timeout, String trace) throws Exception {
+    public Call get(String path, Map<String, String> headers) throws Exception {
+        var builder = request(path).GET();
+        headers.forEach(builder::header);
+        return await(send(builder.build()));
+    }
+
+    public Watch watch(String app, String env, long since, int timeout, String trace) throws Exception {
         var parked = new CompletableFuture<Void>();
         watchRequests.parked.put(trace, parked);
         var response = send(request("/api/configs/watch" + scope(app, env)
@@ -88,18 +101,18 @@ final class LoopbackWriteFixture {
                     try {
                         return new Call(response.statusCode(),
                                 response.headers().firstValue(TraceIdFilter.HEADER).orElseThrow(),
-                                json.readTree(response.body()));
+                                json.readTree(response.body()), response.headers());
                     } catch (Exception cause) {
                         throw new IllegalStateException("Expected trace and JSON for " + request.uri().getPath(), cause);
                     }
                 });
     }
 
-    static Call await(CompletableFuture<Call> future) throws Exception {
+    public static Call await(CompletableFuture<Call> future) throws Exception {
         return future.get(17, SECONDS);
     }
 
-    static String scope(String app, String env) {
+    public static String scope(String app, String env) {
         return "?app=" + encode(app) + "&env=" + encode(env);
     }
 
@@ -107,8 +120,12 @@ final class LoopbackWriteFixture {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
-    record Call(int status, String trace, JsonNode body) {
-        JsonNode expect(int expectedStatus, int code) {
+    public record Call(int status, String trace, JsonNode body, HttpHeaders headers) {
+        public String header(String name) {
+            return headers.firstValue(name).orElse(null);
+        }
+
+        public JsonNode expect(int expectedStatus, int code) {
             assertEquals(expectedStatus, status, body::toString);
             assertEquals(code, body.path("code").asInt(), body::toString);
             assertEquals(trace, body.path("traceId").asText());
@@ -116,8 +133,8 @@ final class LoopbackWriteFixture {
         }
     }
 
-    record Watch(CompletableFuture<Call> response, String trace) implements AutoCloseable {
-        void expect(boolean changed, long revision) throws Exception {
+    public record Watch(CompletableFuture<Call> response, String trace) implements AutoCloseable {
+        public void expect(boolean changed, long revision) throws Exception {
             var call = await(response);
             var data = call.expect(200, 0);
             assertEquals(trace, call.trace());
@@ -132,7 +149,7 @@ final class LoopbackWriteFixture {
     }
 
     @TestConfiguration(proxyBeanMethods = false)
-    static class WatchRequests implements WebMvcConfigurer {
+    public static class WatchRequests implements WebMvcConfigurer {
         private final Map<String, CompletableFuture<Void>> parked = new ConcurrentHashMap<>();
 
         @Override

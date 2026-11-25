@@ -9,10 +9,18 @@ import com.example.configcenter.dto.response.ConfigItemDto;
 import com.example.configcenter.dto.response.ConfigWatchDto;
 import com.example.configcenter.exception.BizException;
 import com.example.configcenter.exception.ErrorCode;
+import com.example.configcenter.receipt.IdempotentWrites;
+import com.example.configcenter.receipt.WriteIntent;
 import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.ConfigService;
 import com.example.configcenter.service.ConfigWatchNotifier;
 import com.example.configcenter.validation.UnicodeName;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -36,22 +44,30 @@ public class ConfigController {
     private final ConfigService service;
     private final ConfigWatchNotifier notifier;
     private final ApiKeyService apiKeyService;
+    private final IdempotentWrites writes;
 
     public ConfigController(ConfigService service,
                             ConfigWatchNotifier notifier,
-                            ApiKeyService apiKeyService) {
+                            ApiKeyService apiKeyService,
+                            IdempotentWrites writes) {
 
         this.service = service;
         this.notifier = notifier;
         this.apiKeyService = apiKeyService;
+        this.writes = writes;
     }
 
     @PostMapping("/configs")
-    public ApiResponse<ConfigItemDto> upsert(
+    @Operation(parameters = @Parameter(name = IdempotentWrites.KEY, in = ParameterIn.HEADER,
+            description = IdempotentWrites.KEY_DESCRIPTION, schema = @Schema(pattern = IdempotentWrites.KEY_PATTERN)))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", useReturnTypeSchema = true,
+            headers = @Header(name = IdempotentWrites.REPLAYED, description = "True for a replay, false for a new numbered write.",
+                    schema = @Schema(type = "boolean")))
+    public ResponseEntity<ApiResponse<ConfigItemDto>> upsert(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
-            @Valid @RequestBody UpsertConfigRequest req) {
+            @Valid @RequestBody UpsertConfigRequest req, HttpServletRequest request) {
         authorize(apiKey, req.getApp(), req.getEnv());
-        return ApiResponse.ok(service.upsert(req));
+        return writes.respond(request, () -> WriteIntent.of(req), ConfigItemDto.class, () -> service.upsert(req));
     }
 
     // 配置列表支持 If-None-Match，这样客户端没命中更新时可以直接拿 304，省 body 也省流量。
@@ -96,11 +112,16 @@ public class ConfigController {
     }
 
     @PostMapping("/configs/rollback")
-    public ApiResponse<ConfigItemDto> rollback(
+    @Operation(parameters = @Parameter(name = IdempotentWrites.KEY, in = ParameterIn.HEADER,
+            description = IdempotentWrites.KEY_DESCRIPTION, schema = @Schema(pattern = IdempotentWrites.KEY_PATTERN)))
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", useReturnTypeSchema = true,
+            headers = @Header(name = IdempotentWrites.REPLAYED, description = "True for a replay, false for a new numbered write.",
+                    schema = @Schema(type = "boolean")))
+    public ResponseEntity<ApiResponse<ConfigItemDto>> rollback(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
-            @Valid @RequestBody RollbackConfigRequest req) {
+            @Valid @RequestBody RollbackConfigRequest req, HttpServletRequest request) {
         authorize(apiKey, req.getApp(), req.getEnv());
-        return ApiResponse.ok(service.rollback(req));
+        return writes.respond(request, () -> WriteIntent.of(req), ConfigItemDto.class, () -> service.rollback(req));
     }
 
     private void authorize(String apiKey, String app, String env) {

@@ -86,6 +86,7 @@ jobs:
           cat config-center-server/target/failsafe-reports/com.example.configcenter.MysqlV2UpgradeIT.txt
           cat config-center-server/target/failsafe-reports/com.example.configcenter.migration.MysqlV4MigrationIT.txt
           cat config-center-server/target/failsafe-reports/com.example.configcenter.MysqlWriteConsistencyIT.txt
+          cat config-center-server/target/failsafe-reports/com.example.configcenter.receipt.MysqlWriteReceiptIT.txt
 
       - name: Capture MySQL service log
         if: failure()
