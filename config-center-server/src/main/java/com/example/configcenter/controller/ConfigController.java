@@ -7,14 +7,11 @@ import com.example.configcenter.dto.request.UpsertConfigRequest;
 import com.example.configcenter.dto.response.ConfigHistoryDto;
 import com.example.configcenter.dto.response.ConfigItemDto;
 import com.example.configcenter.dto.response.ConfigWatchDto;
-import com.example.configcenter.exception.BizException;
-import com.example.configcenter.exception.ErrorCode;
-import com.example.configcenter.receipt.IdempotentWrites;
 import com.example.configcenter.receipt.WriteIntent;
-import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.ConfigService;
 import com.example.configcenter.service.ConfigWatchNotifier;
 import com.example.configcenter.validation.UnicodeName;
+import com.example.configcenter.web.WriteHttpAdapter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
@@ -43,31 +40,28 @@ public class ConfigController {
 
     private final ConfigService service;
     private final ConfigWatchNotifier notifier;
-    private final ApiKeyService apiKeyService;
-    private final IdempotentWrites writes;
+    private final WriteHttpAdapter writes;
 
     public ConfigController(ConfigService service,
                             ConfigWatchNotifier notifier,
-                            ApiKeyService apiKeyService,
-                            IdempotentWrites writes) {
+                            WriteHttpAdapter writes) {
 
         this.service = service;
         this.notifier = notifier;
-        this.apiKeyService = apiKeyService;
         this.writes = writes;
     }
 
     @PostMapping("/configs")
-    @Operation(parameters = @Parameter(name = IdempotentWrites.KEY, in = ParameterIn.HEADER,
-            description = IdempotentWrites.KEY_DESCRIPTION, schema = @Schema(pattern = IdempotentWrites.KEY_PATTERN)))
+    @Operation(parameters = @Parameter(name = WriteHttpAdapter.KEY, in = ParameterIn.HEADER,
+            description = WriteHttpAdapter.KEY_DESCRIPTION, schema = @Schema(pattern = WriteHttpAdapter.KEY_PATTERN)))
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", useReturnTypeSchema = true,
-            headers = @Header(name = IdempotentWrites.REPLAYED, description = "True for a replay, false for a new numbered write.",
+            headers = @Header(name = WriteHttpAdapter.REPLAYED, description = "True for a replay, false for a new numbered write.",
                     schema = @Schema(type = "boolean")))
     public ResponseEntity<ApiResponse<ConfigItemDto>> upsert(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @Valid @RequestBody UpsertConfigRequest req, HttpServletRequest request) {
-        authorize(apiKey, req.getApp(), req.getEnv());
-        return writes.respond(request, () -> WriteIntent.of(req), ConfigItemDto.class, () -> service.upsert(req));
+        return writes.respond(request, apiKey, req.getApp(), req.getEnv(),
+                () -> WriteIntent.of(req), ConfigItemDto.class, () -> service.upsert(req));
     }
 
     // 配置列表支持 If-None-Match，这样客户端没命中更新时可以直接拿 304，省 body 也省流量。
@@ -112,22 +106,16 @@ public class ConfigController {
     }
 
     @PostMapping("/configs/rollback")
-    @Operation(parameters = @Parameter(name = IdempotentWrites.KEY, in = ParameterIn.HEADER,
-            description = IdempotentWrites.KEY_DESCRIPTION, schema = @Schema(pattern = IdempotentWrites.KEY_PATTERN)))
+    @Operation(parameters = @Parameter(name = WriteHttpAdapter.KEY, in = ParameterIn.HEADER,
+            description = WriteHttpAdapter.KEY_DESCRIPTION, schema = @Schema(pattern = WriteHttpAdapter.KEY_PATTERN)))
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", useReturnTypeSchema = true,
-            headers = @Header(name = IdempotentWrites.REPLAYED, description = "True for a replay, false for a new numbered write.",
+            headers = @Header(name = WriteHttpAdapter.REPLAYED, description = "True for a replay, false for a new numbered write.",
                     schema = @Schema(type = "boolean")))
     public ResponseEntity<ApiResponse<ConfigItemDto>> rollback(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @Valid @RequestBody RollbackConfigRequest req, HttpServletRequest request) {
-        authorize(apiKey, req.getApp(), req.getEnv());
-        return writes.respond(request, () -> WriteIntent.of(req), ConfigItemDto.class, () -> service.rollback(req));
-    }
-
-    private void authorize(String apiKey, String app, String env) {
-        if (!apiKeyService.allow(apiKey, app, env)) {
-            throw new BizException(ErrorCode.FORBIDDEN, "API Key 无权限，当前 app/env 不允许写入");
-        }
+        return writes.respond(request, apiKey, req.getApp(), req.getEnv(),
+                () -> WriteIntent.of(req), ConfigItemDto.class, () -> service.rollback(req));
     }
 
     // watch 走长轮询：有更新就立即返回，没更新就先挂住，直到超时或者被通知唤醒。

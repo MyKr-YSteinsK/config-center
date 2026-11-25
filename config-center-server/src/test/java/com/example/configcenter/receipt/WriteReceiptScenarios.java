@@ -4,6 +4,7 @@ import com.example.configcenter.LoopbackWriteFixture;
 import com.example.configcenter.LoopbackWriteFixture.Call;
 import com.example.configcenter.config.ApiKeyProperties;
 import com.example.configcenter.service.ConfigWatchNotifier;
+import com.example.configcenter.web.WriteHttpAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
@@ -104,7 +105,7 @@ abstract class WriteReceiptScenarios {
     @EnumSource(Domain.class)
     void upsertAndRollbackReplayTheOriginalDataEvenAfterLaterWrites(Domain domain) throws Exception {
         var seed = domain.payload("item", 1);
-        assertNull(post(domain.path, seed, "seed").header(IdempotentWrites.REPLAYED));
+        assertNull(post(domain.path, seed, "seed").header(WriteHttpAdapter.REPLAYED));
         var change = with(domain.payload("item", 2), "expectedVersion", 1);
         var first = numbered(post(domain.path, change, "change", "update-1"), "change", false, 2);
         var saved = snapshot();
@@ -150,7 +151,7 @@ abstract class WriteReceiptScenarios {
         for (String key : List.of("", "   ", "two keys", "é", "bad/key", "a,b", "a".repeat(129))) {
             var call = post(Domain.CONFIG.path, fields, "bad-header", key);
             call.expect(400, 4001);
-            assertNull(call.header(IdempotentWrites.REPLAYED));
+            assertNull(call.header(WriteHttpAdapter.REPLAYED));
         }
         post(Domain.CONFIG.path, fields, "duplicates", "same", "same").expect(400, 4001);
         post(Domain.CONFIG.path, fields, "two-values", "first", "second").expect(400, 4001);
@@ -211,7 +212,7 @@ abstract class WriteReceiptScenarios {
             for (String credential : List.of("ungranted-test", ALIAS_KEY)) {
                 var denied = http.post(Domain.CONFIG.path, credential, "unauthorized", fields, number);
                 assertTrue(denied.expect(403, 4031).isNull());
-                assertNull(denied.header(IdempotentWrites.REPLAYED));
+                assertNull(denied.header(WriteHttpAdapter.REPLAYED));
             }
         }
         http.post(Domain.CONFIG.path, KEY, "cross-case", with(fields, "app", ALIAS), "auth-bound").expect(403, 4031);
@@ -275,15 +276,15 @@ abstract class WriteReceiptScenarios {
             JsonNode operation = paths.path(path).path("post");
             List<JsonNode> headers = new ArrayList<>();
             operation.path("parameters").forEach(p -> {
-                if (IdempotentWrites.KEY.equals(p.path("name").asText())) {
+                if (WriteHttpAdapter.KEY.equals(p.path("name").asText())) {
                     headers.add(p);
                 }
             });
             assertEquals(1, headers.size(), path);
             assertFalse(headers.get(0).path("required").asBoolean());
-            assertEquals(IdempotentWrites.KEY_PATTERN, headers.get(0).path("schema").path("pattern").asText());
+            assertEquals(WriteHttpAdapter.KEY_PATTERN, headers.get(0).path("schema").path("pattern").asText());
             JsonNode success = operation.path("responses").path("200");
-            assertTrue(success.path("headers").has(IdempotentWrites.REPLAYED), path);
+            assertTrue(success.path("headers").has(WriteHttpAdapter.REPLAYED), path);
             assertTrue(success.path("content").toString().contains(
                     path.startsWith("/api/configs") ? "ApiResponseConfigItemDto" : "ApiResponseFeatureFlagDto"), path);
         }
@@ -437,7 +438,7 @@ abstract class WriteReceiptScenarios {
         Call loser = a.status() == 409 ? a : b;
         numbered(winner, winner.trace(), false, 2);
         loser.expect(409, 4091);
-        assertNull(loser.header(IdempotentWrites.REPLAYED));
+        assertNull(loser.header(WriteHttpAdapter.REPLAYED));
         String winningNumber = a == winner ? "one" : "two";
         assertEquals(1, count("write_receipt"));
         assertEquals(winningNumber, new String(db.queryForObject("SELECT request_key FROM write_receipt", byte[].class),
@@ -603,7 +604,7 @@ abstract class WriteReceiptScenarios {
     private static JsonNode numbered(Call call, String trace, boolean replayed, long version) {
         JsonNode data = call.expect(200, 0);
         assertEquals(trace, call.trace());
-        assertEquals(Boolean.toString(replayed), call.header(IdempotentWrites.REPLAYED));
+        assertEquals(Boolean.toString(replayed), call.header(WriteHttpAdapter.REPLAYED));
         assertEquals(version, data.path("version").longValue());
         return data;
     }
@@ -611,7 +612,7 @@ abstract class WriteReceiptScenarios {
     private static void expectReuse(Call call) {
         assertTrue(call.expect(409, 4091).isNull());
         assertTrue(call.body().path("message").asText().contains("编号"));
-        assertNull(call.header(IdempotentWrites.REPLAYED));
+        assertNull(call.header(WriteHttpAdapter.REPLAYED));
     }
 
     private List<List<Map<String, Object>>> snapshot() {

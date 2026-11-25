@@ -56,11 +56,8 @@ public class ConfigService {
         boolean isCreate = (item.getId() == null);
 
         // expectedVersion 不匹配时直接拒绝，防止“我改的是旧页面上看到的数据”这种典型覆盖问题。
-        if (!isCreate && req.getExpectedVersion() != null && item.getVersion() != req.getExpectedVersion()) {
-            throw new BizException(
-                    ErrorCode.CONFLICT,
-                    "版本冲突：当前 version=" + item.getVersion() + ", expectedVersion=" + req.getExpectedVersion()
-            );
+        if (!isCreate) {
+            WriteRules.checkExpectedVersion(item.getVersion(), req.getExpectedVersion());
         }
 
         item.setApp(req.getApp());
@@ -79,14 +76,7 @@ public class ConfigService {
                     req.getApp(), req.getEnv(), req.getKey(), item.getVersion());
         }
 
-        ConfigItem saved = repo.save(item);
-
-        // 历史表按追加写入，不回头改旧记录，这样审计链路会更干净。
-        historyRepo.save(toHistory(saved, "UPSERT", req.getOperator(), req.getReason()));
-        long revision = revisionService.advance(req.getApp(), req.getEnv());
-        notifyAfterCommit(req.getApp(), req.getEnv(), revision);
-
-        return toDto(saved);
+        return persistChange(item, req.getApp(), req.getEnv(), "UPSERT", req.getOperator(), req.getReason());
     }
 
     @Transactional(readOnly = true)
@@ -142,11 +132,16 @@ public class ConfigService {
         current.setUpdatedAt(Instant.now());
         current.setVersion(current.getVersion() + 1);
 
-        ConfigItem saved = repo.save(current);
-        historyRepo.save(toHistory(saved, "ROLLBACK", req.getOperator(),
-                "rollback-to=" + targetVer + (req.getReason() == null ? "" : (", " + req.getReason()))));
-        long revision = revisionService.advance(req.getApp(), req.getEnv());
-        notifyAfterCommit(req.getApp(), req.getEnv(), revision);
+        return persistChange(current, req.getApp(), req.getEnv(), "ROLLBACK", req.getOperator(),
+                WriteRules.rollbackReason(targetVer, req.getReason()));
+    }
+
+    private ConfigItemDto persistChange(ConfigItem item, String app, String env, String action, String operator,
+                                         String reason) {
+        ConfigItem saved = repo.save(item);
+        historyRepo.save(toHistory(saved, action, operator, reason));
+        long revision = revisionService.advance(app, env);
+        notifyAfterCommit(app, env, revision);
         return toDto(saved);
     }
 

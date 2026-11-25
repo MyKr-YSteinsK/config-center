@@ -6,13 +6,10 @@ import com.example.configcenter.dto.request.UpsertFeatureRequest;
 import com.example.configcenter.dto.response.FeatureEvalResult;
 import com.example.configcenter.dto.response.FeatureFlagDto;
 import com.example.configcenter.dto.response.FeatureHistoryDto;
-import com.example.configcenter.exception.BizException;
-import com.example.configcenter.exception.ErrorCode;
-import com.example.configcenter.receipt.IdempotentWrites;
 import com.example.configcenter.receipt.WriteIntent;
-import com.example.configcenter.service.ApiKeyService;
 import com.example.configcenter.service.FeatureFlagService;
 import com.example.configcenter.validation.UnicodeName;
+import com.example.configcenter.web.WriteHttpAdapter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
@@ -37,26 +34,24 @@ import java.util.List;
 public class FeatureController {
 
     private final FeatureFlagService service;
-    private final ApiKeyService apiKeyService;
-    private final IdempotentWrites writes;
+    private final WriteHttpAdapter writes;
 
-    public FeatureController(FeatureFlagService service, ApiKeyService apiKeyService, IdempotentWrites writes) {
+    public FeatureController(FeatureFlagService service, WriteHttpAdapter writes) {
         this.service = service;
-        this.apiKeyService = apiKeyService;
         this.writes = writes;
     }
 
     @PostMapping
-    @Operation(parameters = @Parameter(name = IdempotentWrites.KEY, in = ParameterIn.HEADER,
-            description = IdempotentWrites.KEY_DESCRIPTION, schema = @Schema(pattern = IdempotentWrites.KEY_PATTERN)))
+    @Operation(parameters = @Parameter(name = WriteHttpAdapter.KEY, in = ParameterIn.HEADER,
+            description = WriteHttpAdapter.KEY_DESCRIPTION, schema = @Schema(pattern = WriteHttpAdapter.KEY_PATTERN)))
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", useReturnTypeSchema = true,
-            headers = @Header(name = IdempotentWrites.REPLAYED, description = "True for a replay, false for a new numbered write.",
+            headers = @Header(name = WriteHttpAdapter.REPLAYED, description = "True for a replay, false for a new numbered write.",
                     schema = @Schema(type = "boolean")))
     public ResponseEntity<ApiResponse<FeatureFlagDto>> upsert(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @Valid @RequestBody UpsertFeatureRequest req, HttpServletRequest request) {
-        authorize(apiKey, req.getApp(), req.getEnv());
-        return writes.respond(request, () -> WriteIntent.of(req), FeatureFlagDto.class, () -> service.upsert(req));
+        return writes.respond(request, apiKey, req.getApp(), req.getEnv(),
+                () -> WriteIntent.of(req), FeatureFlagDto.class, () -> service.upsert(req));
     }
 
     @GetMapping
@@ -88,21 +83,15 @@ public class FeatureController {
 
     // 这里的回滚思路和配置项一致：不是把旧记录改回来，而是生成一条新的当前版本。
     @PostMapping("/rollback")
-    @Operation(parameters = @Parameter(name = IdempotentWrites.KEY, in = ParameterIn.HEADER,
-            description = IdempotentWrites.KEY_DESCRIPTION, schema = @Schema(pattern = IdempotentWrites.KEY_PATTERN)))
+    @Operation(parameters = @Parameter(name = WriteHttpAdapter.KEY, in = ParameterIn.HEADER,
+            description = WriteHttpAdapter.KEY_DESCRIPTION, schema = @Schema(pattern = WriteHttpAdapter.KEY_PATTERN)))
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", useReturnTypeSchema = true,
-            headers = @Header(name = IdempotentWrites.REPLAYED, description = "True for a replay, false for a new numbered write.",
+            headers = @Header(name = WriteHttpAdapter.REPLAYED, description = "True for a replay, false for a new numbered write.",
                     schema = @Schema(type = "boolean")))
     public ResponseEntity<ApiResponse<FeatureFlagDto>> rollback(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
             @Valid @RequestBody RollbackFeatureRequest req, HttpServletRequest request) {
-        authorize(apiKey, req.getApp(), req.getEnv());
-        return writes.respond(request, () -> WriteIntent.of(req), FeatureFlagDto.class, () -> service.rollback(req));
-    }
-
-    private void authorize(String apiKey, String app, String env) {
-        if (!apiKeyService.allow(apiKey, app, env)) {
-            throw new BizException(ErrorCode.FORBIDDEN, "API Key 无权限，当前 app/env 不允许写入");
-        }
+        return writes.respond(request, apiKey, req.getApp(), req.getEnv(),
+                () -> WriteIntent.of(req), FeatureFlagDto.class, () -> service.rollback(req));
     }
 }

@@ -42,9 +42,8 @@ public class FeatureFlagService {
 
         boolean isCreate = (ff.getId() == null);
 
-        if (!isCreate && req.getExpectedVersion() != null && ff.getVersion() != req.getExpectedVersion()) {
-            throw new BizException(ErrorCode.CONFLICT,
-                    "版本冲突：当前 version=" + ff.getVersion() + ", expectedVersion=" + req.getExpectedVersion());
+        if (!isCreate) {
+            WriteRules.checkExpectedVersion(ff.getVersion(), req.getExpectedVersion());
         }
 
         if (isCreate) {
@@ -67,9 +66,7 @@ public class FeatureFlagService {
             log.info("Feature upsert(update): app={}, env={}, name={}", req.getApp(), req.getEnv(), req.getName());
         }
 
-        FeatureFlag saved = repo.save(ff);
-        historyRepo.save(toHistory(saved, "UPSERT", req.getOperator(), req.getReason()));
-        return toDto(saved);
+        return persistChange(ff, "UPSERT", req.getOperator(), req.getReason());
     }
 
     @Transactional
@@ -89,9 +86,13 @@ public class FeatureFlagService {
         current.setUpdatedAt(Instant.now());
         current.setVersion(current.getVersion() + 1);
 
-        FeatureFlag saved = repo.save(current);
-        historyRepo.save(toHistory(saved, "ROLLBACK", req.getOperator(),
-                "rollback-to=" + targetVer + (req.getReason() == null ? "" : (", " + req.getReason()))));
+        return persistChange(current, "ROLLBACK", req.getOperator(),
+                WriteRules.rollbackReason(targetVer, req.getReason()));
+    }
+
+    private FeatureFlagDto persistChange(FeatureFlag flag, String action, String operator, String reason) {
+        FeatureFlag saved = repo.save(flag);
+        historyRepo.save(toHistory(saved, action, operator, reason));
         return toDto(saved);
     }
 

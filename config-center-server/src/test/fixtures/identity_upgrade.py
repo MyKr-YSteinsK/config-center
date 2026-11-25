@@ -126,10 +126,10 @@ def restore(sql, file):
 
 
 class Jars:
-    def __init__(self, baseline, directory):
+    def __init__(self, baseline, directory, scopes=(ORIGINAL, TARGET)):
         self.baseline, self.directory = baseline, directory
         self.java = resolve_java()
-        self.keys = {ORIGINAL: secrets.token_hex(16), TARGET: secrets.token_hex(16)}
+        self.keys = {scope: secrets.token_hex(16) for scope in scopes}
         self.args = ["--spring.profiles.active=mysql", "--server.address=127.0.0.1", "--server.port=0",
                      "--rate-limit.enabled=false"]
         for i, ((app, env), key) in enumerate(self.keys.items()):
@@ -162,8 +162,8 @@ class Jars:
 
             yield wait_until(port, 80, str(log))
 
-    def command(self, env, name, extra=()):
-        with self.launch(JAR, env, name, extra) as (proc, log):
+    def command(self, env, name, extra=(), *, jar=None):
+        with self.launch(jar or JAR, env, name, extra) as (proc, log):
             code = proc.wait(85)
             return code, log.read_text(encoding="utf-8", errors="replace")
 
