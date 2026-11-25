@@ -295,6 +295,8 @@ abstract class WriteReceiptScenarios {
         var leftClaimed = new CountDownLatch(1);
         var rightAttempted = new CountDownLatch(1);
         var release = new CountDownLatch(1);
+        var winnerCommitted = new CountDownLatch(1);
+        boolean requireDuplicate = race == ClaimRace.SAME_INTENT || race == ClaimRace.OTHER_INTENT;
         var connections = new ConcurrentHashMap<String, Long>();
         var observed = new AtomicReference<String>();
         var waited = new AtomicLong();
@@ -311,6 +313,11 @@ abstract class WriteReceiptScenarios {
             } else {
                 connections.put(trace, connectionId());
                 rightAttempted.countDown();
+                if (requireDuplicate) {
+                    // The second transaction has already read absence. Let the first commit before the
+                    // second INSERT to exercise a duplicate and readback from a new transaction.
+                    awaitSignal(winnerCommitted);
+                }
                 long start = System.nanoTime();
                 try {
                     invocation.callRealMethod();
@@ -345,13 +352,16 @@ abstract class WriteReceiptScenarios {
                     assertFalse(left.isDone());
                     assertEquals(0, count("write_receipt"));
                     release.countDown();
+                    leading = await(left);
                 } else {
                     release.countDown();
+                    leading = await(left);
+                    winnerCommitted.countDown();
                     following = await(right);
                 }
-                leading = await(left);
             } finally {
                 release.countDown();
+                winnerCommitted.countDown();
             }
             reset(store);
 
@@ -381,7 +391,7 @@ abstract class WriteReceiptScenarios {
             assertEquals(1, revision());
             assertEquals(0, notifier.pendingWaiterCount());
             verify(notifier, times(1)).notifyChanged(APP, ENV, 1);
-            if (race == ClaimRace.SAME_INTENT || race == ClaimRace.OTHER_INTENT) {
+            if (requireDuplicate) {
                 assertEquals("receipt unique constraint", observed.get());
             } else if (race == ClaimRace.HELD_CLAIM) {
                 assertEquals("receipt claim lock or statement timeout", observed.get());
