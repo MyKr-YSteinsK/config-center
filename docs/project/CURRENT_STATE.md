@@ -1,5 +1,11 @@
 # 当前状态
 
+## Config-Plan11 · 2026-11-25
+
+8 个 worker 写入不同 key 时，本次把写入分散到 8 个命名空间的做法，在四对测试里都更快。每对的成功吞吐约为集中组的 3.4–4.1 倍，四对共 12,800 次计时写入成功。每轮的当前版本、历史和 revision 均按真实 MySQL 读回核对。端到端差异尚未拆解到各段等待和开销。 [Issue #10](https://github.com/MyKr-YSteinsK/config-center/issues/10) · [逐轮数据、设置与限制](MYSQL_WRITE_BASELINE.md)
+
+审查基线为 `master@124d20f63ed57491af3f9e48878d5451d24e18f2`。新增可复跑的 MySQL 夹具与文档。JDK 17 下 `clean verify` 通过服务端 H2 108 项及客户端 82 项，独立 MySQL 8.0.46 上的 `-Pmysql-it verify` 另通过 Failsafe 46 项。两次均为零失败、零错误和零跳过。测量与回归使用各自的 loopback `config_center_it` 与专用非 root 账号，收尾后核对了这次的进程退出。 [复跑命令](RUNBOOK.md#config-plan11-mysql-配置并发写入基线)
+
 ## Config-Plan10 · 2026-11-25
 
 本轮从审查提交 `db32187e02bf64e56826ae8ef1d6791be6943e34` 更新接手与同步文档，采用工作流 `f50e2b1682af21842a730f20c8533cbc3372a72f`。同时核对两份可选全局候选与上游源文件一致。最近运行验收仍见 Plan09，其审查基线为 `44b4bb6`。下一轮候选为低基数诊断、固定数据集性能基线。 [Issue #9](https://github.com/MyKr-YSteinsK/config-center/issues/9) · [接手与同步](../项目源文件/00-START_HERE.md) · [待审优先级](../项目源文件/UPGRADE_ROADMAP.md#待审优先级)

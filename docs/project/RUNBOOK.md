@@ -35,6 +35,45 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 
 直接运行 JAR 由 `SERVER_ADDRESS` 控制监听，默认 `127.0.0.1`。持久 Compose 的 `0.0.0.0` 只在容器内监听，主机侧由 `SERVER_BIND_ADDRESS` 控制并默认为 loopback。Swagger、H2 Console、Actuator 以及实验用 API key 在这个边界内使用。
 
+## Config-Plan11 MySQL 配置并发写入基线
+
+在仓库根使用 JDK 17、Maven Wrapper、Python 3.11+ 和 PATH 上同版本的 `mysqld`、`mysql`、`mysqladmin`、`mysqldump`。下面的夹具自建随机 loopback 端口的 `config_center_it`、数据目录和专用非 root 测试账户，再启动测量用的 JAR。服务只在这次进程中关闭限流。预跑和正式跑均使用隔离的合成数据。
+
+```powershell
+.\mvnw.cmd -q -B clean verify
+if ($LASTEXITCODE -ne 0) { throw 'Build or H2/client regression failed' }
+python -B config-center-server/src/test/fixtures/mysql_write_baseline.py --smoke-only
+if ($LASTEXITCODE -ne 0) { throw 'The private MySQL smoke run failed' }
+python -B config-center-server/src/test/fixtures/mysql_write_baseline.py
+```
+
+正式命令自带两组小跑，然后按集中→分散、分散→集中交替四对。每轮确认 SQL 种子状态和写入结果，输出当前版本、历史和 revision 的核对结果。失败类别、样本和核验结果写入 `docs/delete/Config-Plan11/write-baseline-*/rounds.jsonl`。原始 JVM 和 MySQL 日志在同一目录。发现失败或读回不符时，该轮标为无效。若发现实际 429，排查限流配置，并用一致条件重跑对照。逐轮数据、环境和计时口径见 [实验记录](MYSQL_WRITE_BASELINE.md)。
+
+常规 MySQL 回归另建专用实例。以下 Windows 命令复用夹具的原生 MySQL 启停，在 Maven 完整退出后关闭独立测试库。该 profile 会重建部分测试表。
+
+```powershell
+@'
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+root = Path.cwd()
+sys.path.insert(0, str(root / "config-center-server/src/test/fixtures"))
+from identity_upgrade import private_mysql
+
+qa = root / "docs/delete/Config-Plan11"
+qa.mkdir(parents=True, exist_ok=True)
+run = Path(tempfile.mkdtemp(prefix="mysql-verify-", dir=qa))
+with private_mysql(run / "mysql") as (_, env, _):
+    result = subprocess.run([str(root / "mvnw.cmd"), "-q", "-B", "-Pmysql-it", "verify"],
+                            cwd=root, env=env)
+raise SystemExit(result.returncode)
+'@ | python -B -
+```
+
+回归结果读取 `config-center-server/target/failsafe-reports/` 和两模块的 `target/surefire-reports/`。避免在计时期间并行跑 Maven，Windows 如遇系统临时目录 ACL 问题参考 [换机与排障](#换机和排障)。
+
 ## Config-Plan09 实包进程与失败诊断
 
 在仓库根用 Python 3.11+ 执行直接回归。测试用可控 Python 子进程写日志，既不启动 JAR 也不占用端口。检查已退出的子进程、就绪超时、正常停止、场景异常、中断和一次性命令。终止超时后的强制清理使用替身验证调用与两次有界等待。
