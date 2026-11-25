@@ -8,7 +8,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
-import re
 import secrets
 import shutil
 import socket
@@ -18,7 +17,8 @@ import threading
 import time
 from urllib.parse import urlencode, urlsplit, parse_qs
 
-from write_outcome import JAR, ROOT, MysqlReadback, request, resolve_java
+from jar_process import LoggedProcess, resolve_java
+from write_outcome import JAR, ROOT, MysqlReadback, request
 
 ORIGINAL = ("plan06-alpha", "dev")
 TARGET = ("Plan06-alpha", "Dev")
@@ -136,36 +136,18 @@ class Jars:
             self.args.extend(f"--security.api-keys[{i}].{part}={value}"
                              for part, value in {"app": app, "env": env, "key": key}.items())
 
-    @contextmanager
     def launch(self, jar, env, name, extra=()):
-        log = self.directory / (name + ".log")
-        with log.open("wb") as sink:
-            proc = subprocess.Popen([str(self.java), "-jar", str(jar), *self.args, *extra],
-                                    env=env, cwd=ROOT, stdout=sink, stderr=subprocess.STDOUT)
-            try:
-                yield proc, log
-            finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                    proc.wait(18)
+        command = [str(self.java), "-jar", str(jar), *self.args, *extra]
+        return LoggedProcess(command, self.directory / (name + ".log"), stage=name,
+                             cwd=ROOT, env=env, stop_timeout=18)
 
-    @contextmanager
     def serving(self, jar, env, name, extra=()):
-        with self.launch(jar, env, name, extra) as (proc, log):
-            def port():
-                match = re.search(rb"Tomcat started on port (\d+)", log.read_bytes())
-                if match:
-                    return int(match[1])
-                if proc.poll() is not None:
-                    raise RuntimeError(f"JAR exited. Read {log}")
-                return None
-
-            yield wait_until(port, 80, str(log))
+        return self.launch(jar, env, name, extra).serving(80)
 
     def command(self, env, name, extra=(), *, jar=None):
-        with self.launch(jar or JAR, env, name, extra) as (proc, log):
-            code = proc.wait(85)
-            return code, log.read_text(encoding="utf-8", errors="replace")
+        with self.launch(jar or JAR, env, name, extra) as child:
+            code = child.wait(85)
+            return code, child.log.read_text(encoding="utf-8", errors="replace")
 
     def post(self, port, route, scope, key_scope=None, **fields):
         body = json.dumps({"app": scope[0], "env": scope[1], **fields}).encode()

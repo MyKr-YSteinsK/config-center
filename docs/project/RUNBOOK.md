@@ -35,6 +35,75 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 
 直接运行 JAR 由 `SERVER_ADDRESS` 控制监听，默认 `127.0.0.1`。持久 Compose 的 `0.0.0.0` 只在容器内监听，主机侧由 `SERVER_BIND_ADDRESS` 控制并默认为 loopback。Swagger、H2 Console、Actuator 以及实验用 API key 在这个边界内使用。
 
+## Config-Plan09 实包进程与失败诊断
+
+在仓库根用 Python 3.11+ 执行直接回归。测试用可控 Python 子进程写日志，既不启动 JAR 也不占用端口。检查已退出的子进程、就绪超时、正常停止、场景异常、中断和一次性命令。终止超时后的强制清理使用替身验证调用与两次有界等待。
+
+```powershell
+python -B config-center-server/src/test/fixtures/test_jar_process.py
+```
+
+Watch、写入断连和迁移脚本共用 `jar_process.py`。它通过 `java.home` 找到实际的 JVM，读取新子进程的 Tomcat 端口日志，在交出端口前检查该子进程仍存活。没有额外的 HTTP 就绪请求。启动诊断包含阶段、绝对日志路径及可用退出码。原 `server-1.log`、`server-2.log`、`server.log` 和迁移阶段日志继续记录原始 stdout/stderr，可据此查 PID。Watch 等待监听最多 75 秒，写入断连及迁移监听等待 80 秒。一次性预检仍等待最多 85 秒并返回退出码与完整日志。
+
+停止时先终止并等待。Watch 和写入断连等 15 秒，迁移等 18 秒。到期后强制终止，再等同样的时限。先前的错误会保留，清理结果附在错误后或写到 stderr。Windows 的两种终止方法使用同一个系统调用，替身检查的是超时处理和再次等待的顺序。端口检查只代表当次观察，子进程仍可能随后停止。MySQL 仍以实际 SQL 认证判定就绪，并用 `mysqladmin shutdown` 收尾。
+
+### 基线对照
+
+从审查提交 `44b4bb6` 取旧夹具，替换其 `Jars.launch` 的进程来源。子进程打印日志并主动退出后才开始判定。以下脚本会断言旧夹具错误接受了端口，候选的直接回归断言相同条件下拒绝并报告退出码 23。
+
+```powershell
+$reviewFixture = (New-Item -ItemType Directory "docs/delete/plan09-$([guid]::NewGuid())").FullName
+git archive --format=zip -o "$reviewFixture/fixtures.zip" 44b4bb6 -- config-center-server/src/test/fixtures
+if ($LASTEXITCODE -ne 0) { throw 'Baseline fixture archive failed' }
+Expand-Archive -LiteralPath "$reviewFixture/fixtures.zip" -DestinationPath $reviewFixture
+@'
+from contextlib import contextmanager
+from pathlib import Path
+import subprocess
+import sys
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "config-center-server/src/test/fixtures"))
+from identity_upgrade import Jars
+
+log = root / "exited.log"
+with log.open("wb") as sink:
+    child = subprocess.Popen([sys.executable, "-c",
+        "print('Tomcat started on port 43123', flush=True); raise SystemExit(23)"],
+        stdout=sink, stderr=subprocess.STDOUT)
+    assert child.wait(10) == 23
+
+@contextmanager
+def launch(*args):
+    yield child, log
+
+jars = Jars.__new__(Jars)
+jars.launch = launch
+with jars.serving(None, None, "baseline-exited") as port:
+    assert port == 43123 and child.poll() == 23
+    print(f"Baseline accepted port {port} after exit {child.returncode}. Log: {log}")
+'@ | python -B - $reviewFixture
+```
+
+### 原命令回归
+
+在 JDK 17 下先用 `.\mvnw.cmd -q -B clean verify` 构建当前 JAR。按下列各节的 `git archive` 步骤取得三个旧包。将 `$v3`、`$v4`、`$v5` 设为相应 JAR 的完整路径，用 `Get-FileHash -Algorithm SHA256` 记录四个包的身份。 [V3 · `52e887d`](#合成演练和失败恢复) · [V4 · `5e13538`](#测试与实包断连演练) · [V5 · `0e65ac8`](#config-plan08-写入调用链对照)
+
+```powershell
+python -B config-center-client/src/test/fixtures/watch_recovery.py all
+python -B config-center-server/src/test/fixtures/write_outcome.py --profile local
+# 以下第一条需要事先配置独占、loopback 的 config_center_it 和专用非 root 账号
+python -B config-center-server/src/test/fixtures/write_outcome.py --profile mysql
+# 以下三条将各自启动隔离的原生 MySQL
+python -B config-center-server/src/test/fixtures/identity_upgrade.py --baseline-jar $v3
+python -B config-center-server/src/test/fixtures/idempotency_replay.py --baseline-jar $v4
+python -B config-center-server/src/test/fixtures/write_chain_comparison.py --baseline-jar $v5 --legacy-jar $v3
+```
+
+写入断连的 MySQL profile 需要隔离 MySQL 的环境变量。后面三条需要 `mysqld`、`mysql`、`mysqladmin` 和 `mysqldump`。使用 Maven 启动 CLI 的场景顺序运行。日志、合成库、备份和缓存按场景写在 `docs/delete/` 下。 [隔离 MySQL 环境变量](#快测与真实-mysql-http) · [实测记录](CURRENT_STATE.md#config-plan09--2026-11-25)
+
+本机执行 `.\mvnw.cmd -q -B -Pmysql-it verify` 时，等完整 Maven 命令结束再关闭这次的隔离 MySQL。Windows 外层命令提早超时可能先关闭数据库，让仍在运行的 Failsafe JVM 报连接失败。复跑时使用新的隔离库。
+
 ## Config-Plan08 写入调用链对照
 
 同一组合成操作分别走旧、新 JAR 的 HTTP 入口。脚本比较实际响应和数据库，并让新 JAR 直接连接旧 JAR 刚写过的 V5 库，重放四类旧回执。其余迁移、并发、故障和 CLI 场景仍可按各节独立复演。

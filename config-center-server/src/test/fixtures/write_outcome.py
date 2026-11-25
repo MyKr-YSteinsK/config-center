@@ -14,9 +14,11 @@ import shutil
 import subprocess
 import tempfile
 import threading
-import time
 from typing import Optional
 from urllib.parse import quote, urlencode, urlsplit
+
+from jar_process import LoggedProcess, resolve_java
+
 
 ROOT = Path(__file__).resolve().parents[4]
 JAR = ROOT / "config-center-server/target/config-center-server-1.0.0.jar"
@@ -77,43 +79,18 @@ class MysqlReadback:
         return [line.split("\t") for line in result.stdout.splitlines()]
 
 
-def resolve_java():
-    settings = subprocess.run(["java", "-XshowSettings:properties", "-version"], check=True, timeout=10,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace").stdout
-    home = re.search(r"(?m)^\s*java\.home = (.+)$", settings)
-    version = re.search(r"(?m)^\s*java\.version = (17[^\s]*)$", settings)
-    if not home or not version:
-        raise RuntimeError("This fixture requires JDK 17 on PATH")
-    executable = Path(home[1].strip()) / "bin" / ("java.exe" if os.name == "nt" else "java")
-    print("JDK", version[1], flush=True)
-    return executable
-
-
 @contextmanager
 def server(profile, app, key, directory, environment, *, jar=None):
     env = {**environment, "JAVA_TOOL_OPTIONS": f'-Djava.io.tmpdir="{directory.as_posix()}"'}
     java = resolve_java()
-    log = directory / "server.log"
-    with log.open("wb") as output:
-        process = subprocess.Popen(
-            [str(java), "-jar", str(jar or JAR), "--spring.profiles.active=" + profile,
-             "--server.address=127.0.0.1", "--server.port=0", "--rate-limit.enabled=false",
-             "--security.api-keys[0].key=" + key,
-             "--security.api-keys[0].app=" + app, "--security.api-keys[0].env=" + ENV],
-            cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, env=env)
-        try:
-            until = time.monotonic() + 80
-            while process.poll() is None and time.monotonic() < until:
-                match = re.search(rb"Tomcat started on port (\d+)", log.read_bytes())
-                if match:
-                    yield int(match[1])
-                    return
-                time.sleep(0.2)
-            raise RuntimeError(f"Packaged server failed to start. Read {log}")
-        finally:
-            if process.poll() is None:
-                process.terminate()
-                process.wait(15)
+    command = [str(java), "-jar", str(jar or JAR), "--spring.profiles.active=" + profile,
+               "--server.address=127.0.0.1", "--server.port=0", "--rate-limit.enabled=false",
+               "--security.api-keys[0].key=" + key,
+               "--security.api-keys[0].app=" + app, "--security.api-keys[0].env=" + ENV]
+    child = LoggedProcess(command, directory / "server.log", stage=f"write outcome ({profile})",
+                          cwd=ROOT, env=env, stop_timeout=15)
+    with child.serving(80) as port:
+        yield port
 
 
 class DropWriteResponse(HTTPServer):

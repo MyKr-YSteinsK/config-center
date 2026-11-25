@@ -1,11 +1,13 @@
 """Run the built server and Java CLI on loopback with a controlled outage."""
 import argparse
+from contextlib import ExitStack
 import hashlib
 import http.client
 import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -14,6 +16,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(ROOT / "config-center-server/src/test/fixtures"))
+from jar_process import LoggedProcess, resolve_java
+
+
 JAR = ROOT / "config-center-server/target/config-center-server-1.0.0.jar"
 QUERY = "?app=demo-app&env=dev"
 CONFIGS = "/api/configs"
@@ -24,43 +30,28 @@ SCENARIOS = ("recover", "restart", "503", "connection", "timeout")
 
 
 class LocalServer:
-    def __init__(self, directory, env):
+    def __init__(self, directory, env, running):
         self.directory = directory
         self.env = env
-        self.process = None
-        settings = subprocess.run(["java", "-XshowSettings:properties", "-version"], check=True, timeout=10,
-                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
-        java_home = re.search(r"(?m)^\s*java\.home = (.+)$", settings)
-        if not java_home:
-            raise RuntimeError("Cannot find the actual Java executable for the fixture")
-        self.java = Path(java_home[1].strip()) / "bin" / ("java.exe" if os.name == "nt" else "java")
+        self.running = running
+        self.java = resolve_java(report=False)
         self.starts = 0
         self.port = None
 
     def start(self):
         self.starts += 1
         log = self.directory / f"server-{self.starts}.log"
-        with log.open("wb") as output:
-            self.process = subprocess.Popen(
-                [str(self.java), "-jar", str(JAR), "--spring.profiles.active=local",
-                 "--server.address=127.0.0.1", "--server.port=0", "--rate-limit.enabled=false",
-                 "--spring.datasource.url=jdbc:h2:mem:watch-smoke;MODE=MySQL;DB_CLOSE_DELAY=-1",
-                 "--spring.datasource.driver-class-name=org.h2.Driver", "--spring.datasource.username=sa",
-                 "--spring.datasource.password=", "--spring.flyway.enabled=false"],
-                cwd=ROOT, env=self.env, stdout=output, stderr=subprocess.STDOUT)
-        limit = time.monotonic() + 75
-        while self.process.poll() is None and time.monotonic() < limit:
-            match = re.search(rb"Tomcat started on port (\d+)", log.read_bytes())
-            if match:
-                self.port = int(match[1])
-                return
-            time.sleep(0.2)
-        raise RuntimeError(f"Server startup failed. Read {log}")
+        command = [str(self.java), "-jar", str(JAR), "--spring.profiles.active=local",
+                   "--server.address=127.0.0.1", "--server.port=0", "--rate-limit.enabled=false",
+                   "--spring.datasource.url=jdbc:h2:mem:watch-smoke;MODE=MySQL;DB_CLOSE_DELAY=-1",
+                   "--spring.datasource.driver-class-name=org.h2.Driver", "--spring.datasource.username=sa",
+                   "--spring.datasource.password=", "--spring.flyway.enabled=false"]
+        child = LoggedProcess(command, log, stage=f"Watch {log.stem}", cwd=ROOT, env=self.env, stop_timeout=15)
+        self.port = self.running.enter_context(child.serving(75))
 
     def stop(self):
-        if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
-            self.process.wait(15)
+        self.port = None
+        self.running.close()
 
     def request(self, method, path, body=None, headers=None):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=65)
@@ -86,6 +77,8 @@ class FaultProxy(ThreadingHTTPServer):
     """Forward scoped GETs to one local JAR and stage faults after a Watch notification."""
     def __init__(self, backend, scenario):
         super().__init__(("127.0.0.1", 0), ProxyHandler)
+        # A restart handler can own a new JVM. Join it before closing the process stack.
+        self.daemon_threads = scenario != "restart"
         self.backend = backend
         self.scenario = scenario
         self.origin = f"http://127.0.0.1:{self.server_port}"
@@ -243,8 +236,8 @@ def exercise(scenario):
     directory = Path(tempfile.mkdtemp(prefix=scenario + "-", dir=qa))
     env = {**os.environ, "CONFIG_CENTER_API_KEY": "kr-dev-key",
            "JAVA_TOOL_OPTIONS": f'-Djava.io.tmpdir="{directory.as_posix()}"'}
-    backend = LocalServer(directory, env)
-    try:
+    with ExitStack() as running:
+        backend = LocalServer(directory, env, running)
         backend.start()
         for _ in range(3 if scenario == "restart" else 1):
             backend.put(CONFIGS, key="sample", value="old")
@@ -258,8 +251,6 @@ def exercise(scenario):
                 proxy.release.set()
                 proxy.shutdown()
                 worker.join()
-    finally:
-        backend.stop()
 
 
 def main():

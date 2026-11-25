@@ -1,5 +1,32 @@
 # 当前状态
 
+## Config-Plan09 · 2026-11-25
+
+复演时，已经退出的服务有时会在日志里留下端口。旧夹具会拿着这个端口继续运行。现在会先确认这次启动的进程仍存活，失败时给出阶段、日志路径和可用退出码。场景出错后也会收尾，并保留原来的错误。
+
+审查基线为 `master@44b4bb60a13d90bfb2cb4967336bdfde96a52382`，开始时与配置的 `origin/master` 一致。三份本地 `Popen`、Tomcat 端口判定和终止等待收敛到 `jar_process.py`，两份 JDK 发现合为一处。Watch 保有重启和编号日志，断连夹具保有 profile、隔离环境及 `server.log`，迁移夹具保有各阶段参数、日志和一次性命令结果。MySQL 用自己的 SQL 就绪检查和优雅停止。现行 Java/HTTP、V1–V5、构建、Compose 和测试工作流均以审查提交为准。 [Issue #8](https://github.com/MyKr-YSteinsK/config-center/issues/8) · [复现和诊断](RUNBOOK.md#config-plan09-实包进程与失败诊断)
+
+| 验收 | 实测 |
+| --- | --- |
+| 失败与进程清理 | 旧夹具接受了已经退出的进程日志中的端口 43123。相同条件下候选报告 `dead-with-port: child exited before port handoff (exit code 23)` 与绝对日志路径，无端口行的退出对照也返回 23。存活无端口 1.5 秒后超时，真实子进程已结束。正常结束、场景异常和中断均确认回收，场景异常保留原错误。实际缺失可执行文件有独立诊断。一次性命令保留退出码 7 和完整输出。直接回归 7 项通过，强制终止的两次有界等待及失败诊断由替身检验。 |
+| Watch CLI | 原 `watch_recovery.py all` 退出 0。五个场景均验证 200→304。三次 503 后约 5.08 秒发出探测并确认游标 2。H2 重启后为 3→0→1。持续 503、拒连、读超时分别在 6009、6005、7308 ms 结束恢复，三个 CLI 均按预期退出 1。 |
+| 写入断连 | `write_outcome.py` 的 `local` 与 `mysql` 均退出 0。转发 1 次时读到 v2、新历史及推进后的 revision。转发 0 次时保留原状态，另有后写覆盖、相同内容与刻意重放对照。MySQL 用独立 SQL 核对当前、历史和 revision。 |
+| V3 升级和恢复 | `identity_upgrade.py` 验证无映射预检非零、匹配映射预检退出 0 且保持原库。实际部分 DDL 留下首张历史表的 `owner_id`，常规启动拒绝失败的 Flyway 标记。在另一隔离库恢复备份，旧 JAR 读到原数据。候选用真实 CLI 跳过旧缓存，读到 200 和新验证器的 304。精确历史、回滚、Watch、分桶及无额外迁移的重启均通过。 |
+| V5 断连重放 | `idempotency_replay.py` 从 V4 样本升级并退出 0。用新的服务进程取回配置保存和旗标回滚的原结果。JAR 日志的 PID 为 7428→13032，重放无新增历史与回执，Watch revision 保持 7。零转发样本的首次重试写入一次。 |
+| V5 写入链对照 | `write_chain_comparison.py` 退出 0。两份结果 JSON 的 37 个 HTTP/OpenAPI 项及六张表 29 行一致。在同一旧库切换时，四份旧回执的 `data` 逐字节相同，Watch revision 保持 3。随后新编号写入及两类旧历史回滚通过。 |
+| Maven | `clean verify` 执行服务端 H2 108 项、客户端 82 项。本机独立源码副本和隔离 MySQL 重跑 `-Pmysql-it verify`，执行同样的 108、82 项及 MySQL Failsafe 46 项。最终两套均为零失败、零错误、零跳过。首轮本机 MySQL 验证由外层 480 秒时限提前关闭数据库，重跑取消该包装时限并使用新隔离实例。 |
+
+本机实包环境为 Windows x64（26200）、JDK 17.0.12、Maven Wrapper 3.9.16、Python 3.14.6 与原生 MySQL 8.0.46。MySQL 使用各自独占的 loopback `config_center_it` 和专用非 root 账号。直接回归输出、命令总日志和实包指纹保存在本机忽略目录 `docs/delete/Config-Plan09/`，各场景的原始服务日志随各自运行目录保留。
+
+| 实包 | 源码来源 | JAR SHA-256 |
+| --- | --- | --- |
+| V3 | `52e887daab5881974ec7d9bf06a707d2110fb378` | `1076e4f4cd4dd8c9c26308031bfea7b09eea6a767c0a0e640e0a1f22d63bb9d7` |
+| V4 | `5e1353811cceb76d5effb164342ccf5b9e822f8b` | `f4e5891f3a77dcce81c225e812eebf0e8efe98bc1d5c480de77b917b95afd064` |
+| V5 对照 | `0e65ac86c51e1f05edec5ab52fc85805114636b1` | `039927a7d8e28d4dab6577cf6b8c6c04f5e355c49bc97abbfce244a103bd88ac` |
+| 本轮候选 | 本轮工作树，Java 源与 `44b4bb6` 相同 | `be58dd762301f53e242c460ff3308962e93203dfcb094557c2b59842c4a6e1e0` |
+
+候选与 Plan08 已核对的 JAR 中，`BOOT-INF/classes` 与 `BOOT-INF/lib` 共 174 个文件内容逐一相同。复演收尾后，原始日志中记录的 36 个 JVM PID 与 9 个独立 MySQL PID 均已退出。启动检查依赖 Tomcat 日志与进程存活观察，没有新增 HTTP 探测。按最终交付 SHA 查看两个 CI 作业。[GitHub Actions](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml)
+
 ## Config-Plan08 · 2026-11-25
 
 保存和回滚原来各写一遍收尾。现在配置和旗标各自共用保存与记录历史的路径，四个接口共用权限和请求头处理。实包对照中，两个版本返回相同的业务结果，新版本也逐字取回了旧版本保存的四份回执。
@@ -23,7 +50,7 @@ Watch、CLI 和读取路径本来已有各自的状态与职责，本轮沿用�
 
 ## 后续工作
 
-优先审查脚本启动和就绪步骤的维护成本，再评估低基数的写入和 Watch 诊断。Watch、CLI 各段已有验证过的等待和恢复职责，按实际故障定位价值决定局部整理。性能先固定数据、并发和引擎，再测历史查询、编号写入与重放以及 Watch 完成时间。[后续优先级与验收](../项目源文件/UPGRADE_ROADMAP.md#待审优先级) · [历史整理](HISTORY.md)
+评估低基数的写入和 Watch 诊断。Watch、CLI 各段已有验证过的等待和恢复职责，按实际故障定位价值决定局部整理。性能先固定数据、并发和引擎，再测历史查询、编号写入与重放以及 Watch 完成时间。[后续优先级与验收](../项目源文件/UPGRADE_ROADMAP.md#待审优先级) · [历史整理](HISTORY.md)
 
 ## Config-Plan07 · 2026-11-25
 

@@ -1,6 +1,6 @@
 # config-center｜接手快照
 
-日期 2026-11-25。适用仓库 `MyKr-YSteinsK/config-center`，分支 `master`。Config-Plan08 审查基线 `0e65ac86c51e1f05edec5ab52fc85805114636b1`。源码和验证证据见同一交付的 `docs/project/CURRENT_STATE.md`。
+日期 2026-11-25。适用仓库 `MyKr-YSteinsK/config-center`，分支 `master`。Config-Plan09 审查基线 `44b4bb60a13d90bfb2cb4967336bdfde96a52382`。源码和验证证据见同一交付的 `docs/project/CURRENT_STATE.md`。
 
 ## 目标和阶段
 
@@ -11,6 +11,8 @@ Config-Plan06 统一为精确名称。以前共用同一条数据的不同拼写
 Config-Plan07 为四种保存和回滚提供可选请求编号。保存、历史、配置 revision 和成功回执一次提交。即使回信丢失或服务重启，获授权的调用方可用原编号和原请求取回当时的结果。无编号调用继续用原流程。[Config-Plan07](https://github.com/MyKr-YSteinsK/config-center/issues/6)
 
 Config-Plan08 整理了四条写入链的内部职责。公共 HTTP 适配负责校验后授权、编号和响应，执行器管理编号事务。两域各有一条保存和追加历史路径，配置服务同时推进 revision 并注册提交后通知。用相同合成输入对照两份实包，新构建接回原 V5 库时取回了四份旧回执的原始结果。[Config-Plan08](https://github.com/MyKr-YSteinsK/config-center/issues/7)
+
+Config-Plan09 合并了 Watch、写入断连和迁移复演的进程启动、端口判定和清理。旧夹具可能误接收已退出进程留下的端口。现在交出端口前会检查本次进程，在失败时给出阶段、日志和可用退出码。各场景继续按原命令运行，迁移的一次性预检仍可返回预期的非零值。[Config-Plan09](https://github.com/MyKr-YSteinsK/config-center/issues/8)
 
 ## 已实现能力
 
@@ -40,8 +42,9 @@ Java 17、Spring Boot 3 和 Maven 双模块入口。保留已有 API 与 envelop
 - 实包断连演练分别记录代理转发真相、独立 HTTP 当前/历史/revision、MySQL 命令行读回。目标效果存在时停止写入。历史显示曾经保存的值，trace、operator 和 reason 缺乏唯一的持久请求归因。详见同一提交的 `docs/project/WRITE_CONSISTENCY.md` 与 `docs/project/RUNBOOK.md`。
 - 对编号请求，原意图重放返回已存 data 和本次 trace。换操作或正文使用同一编号为 409。每次都重新授权，写入失败可用原编号再试。V5 实包在真实 V4 样本库升级，验证保存成功后断连、零转发、后写覆盖和换进程重放。成功回执持续保留，旧服务会忽略编号，升级需停旧写入者。见 `docs/project/WRITE_RECEIPTS.md`。
 - Plan08 的实包对照保留原 HTTP 错误顺序、OpenAPI、时间顺序、owner 和数据库版本。切换同一库时，四类旧回执的 `data`（含 Instant）逐字对照，历史行和回执摘要按原值检查。完整回归和操作步骤见 `docs/project/CURRENT_STATE.md` 和 `docs/project/RUNBOOK.md`。
+- Plan09 用可控子进程重现已退出误判、存活无端口超时及场景中断。用原命令复跑 Watch 五个 CLI 场景、两种断连读回、V3 迁移、V4/V5 重放与写入链对照。每次启动仍写自己的日志，独占 MySQL 中的活动以实际 SQL 认证与读回确认。命令和环境见 `docs/project/RUNBOOK.md` 的 Plan09 一节。
 - [对应 GitHub Actions](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml) 按实际交付 SHA 查看 `build-test` 与 MySQL 8.4 的 `mysql-integration`。`CURRENT_STATE.md` 记录源码与验证环境，历史接管记录在 `HISTORY.md`。按 D-011 快进推送并核对远端。
 
 ## 后续进入点
 
-下一份任务从维护收益出发，先审查异步验证和测试夹具的重复成本，再评估低基数诊断与固定数据集性能基线。Watch 和 CLI 以现有职责与回归作基线，按实际问题考虑局部修改。新增前置条件、回执清理、跨项目消费、SDK 和前端均是候选。详细验收和依赖见 `UPGRADE_ROADMAP.md`。
+后续可评估低基数诊断与固定数据集性能基线。Watch、CLI 和复演夹具以现有职责与回归作基线，按实际问题考虑局部修改。新增前置条件、回执清理、跨项目消费、SDK 和前端均是候选。详细验收和依赖见 `UPGRADE_ROADMAP.md`。
