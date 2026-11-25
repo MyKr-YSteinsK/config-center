@@ -1,6 +1,6 @@
 # config-center｜接手快照
 
-日期 2026-11-25。适用仓库 `MyKr-YSteinsK/config-center`，分支 `master`。Config-Plan06 审查基线 `52e887daab5881974ec7d9bf06a707d2110fb378`。源码和验证证据见同一交付的 `docs/project/CURRENT_STATE.md`。
+日期 2026-11-25。适用仓库 `MyKr-YSteinsK/config-center`，分支 `master`。Config-Plan07 审查基线 `5e1353811cceb76d5effb164342ccf5b9e822f8b`。源码和验证证据见同一交付的 `docs/project/CURRENT_STATE.md`。
 
 ## 目标和阶段
 
@@ -8,20 +8,22 @@
 
 Config-Plan06 统一为精确名称。以前共用同一条数据的不同拼写现在可以分别创建。V4 把旧历史关联到当前行，保留原来的名字和内容，混合 scope 默认停止等待审查。已在隔离 MySQL 验证旧库恢复、再升级与 CLI 新缓存切换。[Config-Plan06](https://github.com/MyKr-YSteinsK/config-center/issues/5)
 
+Config-Plan07 为四种保存和回滚提供可选请求编号。保存、历史、配置 revision 和成功回执一次提交。即使回信丢失或服务重启，获授权的调用方可用原编号和原请求取回当时的结果。无编号调用继续用原流程。[Config-Plan07](https://github.com/MyKr-YSteinsK/config-center/issues/6)
+
 ## 已实现能力
 
 | 模块 | 职责 |
 | --- | --- |
 | Spring Boot 服务端 | 按精确 `app/env/key` 或 `app/env/name` 读写。精确写授权、历史归属与回滚、弱 ETag 和按精确 scope 的 Watch。Feature Flag 按关闭、allowlist、稳定分桶顺序给出结果。 |
 | Java CLI | HTTP 超时、retry/backoff、断路器、ETag/304、JSON 磁盘缓存、受限瞬时失败回退和有限 Watch 恢复。新缓存名为 `.config-center-client-cache-exact-v1.json`，需要新服务端有效 200 才建立条目。 |
-| 持久化 | H2 快测和本地体验。MySQL 使用 Flyway V1–V4、Hibernate validate 及 `utf8mb4_0900_bin` 精确身份列。两类历史的 `owner_id` 保证版本归属。使用隔离 schema 与 CI service container 做回归。 |
+| 持久化 | H2 快测和本地体验。MySQL 使用 Flyway V1–V5、Hibernate validate 及 `utf8mb4_0900_bin` 精确身份列。两类历史以 `owner_id` 归属。V5 回执按精确 scope 和二进制编号唯一，保留版本化意图摘要和原业务响应。 |
 | 运维 | loopback 默认值、写入 API key、进程内有界限流和 Watch 等待队列、traceId、Actuator/Micrometer/Prometheus。 |
 
 接管中的三项局部整理统一 Feature Flag 判定来源、弱 ETag 的十六进制输出和配置响应/缓存校验。业务版本、JPA 乐观锁与命名空间 revision 各有用途。配置写入产生历史和 revision，通知在提交后发生。两类回滚都生成下一业务版本。CLI 从 0 开始订阅，首个观察后也需读取。有效 200 或用具体 ETag 验证的 304 才能确认先前观察到的 revision。旧缓存回退保留待同步，默认 30 秒恢复调度窗口、至少 1 秒间隔。观察到 revision 变小会重同步。若重建后 revision 已追平或超过旧游标，现有协议无法区分。
 
 ## 保护边界
 
-Java 17、Spring Boot 3 和 Maven 双模块入口。已有 `/api/configs`、`/api/features` 路径、响应 `code/message/data/traceId` 及其测试。保留 MySQL V1 至 V4，未来迁移从 V5 追加。主 Compose 数据卷、`.env`、真实授权和归属映射留在私有位置。故障恢复只用隔离的 `config_center_it` 与合成数据。当前读接口与诊断面向本机。 `v1.0.0` 历史标签与当前源码构建标识存在差异，等待发布决定。
+Java 17、Spring Boot 3 和 Maven 双模块入口。保留已有 API 与 envelope、精确授权、owner 历史、回滚新版本以及提交后 Watch。MySQL V1 至 V5 固定，后续从 V6 追加。真实授权、回执、归属映射与业务配置留在私有位置。故障恢复只用隔离的 `config_center_it` 与合成数据。备份和恢复须覆盖业务与回执。当前读接口与诊断面向本机。 `v1.0.0` 历史标签与当前源码构建标识存在差异，等待发布决定。
 
 ## 运行、核验和恢复
 
@@ -34,8 +36,9 @@ Java 17、Spring Boot 3 和 Maven 双模块入口。已有 `/api/configs`、`/ap
 - V3 的 `utf8mb4_unicode_ci` 在样本上折叠大小写、重音和尾空格。V4 用 `utf8mb4_0900_bin` 与 Java 对齐，当前身份、写授权和 Watch 精确匹配。历史查找按当前 ID，原历史拼写仅用于追溯。保留原当前旗标名和稳定分桶算法。
 - 旧库先停止写入、备份并验证恢复，再用实际授权配置运行 `--check-identity-migration`。如需决策，只能在对应旧组中按最新指纹选定已观察且有授权的目标 scope。实测 MySQL 的中途 DDL 失败可留下部分列，按完整 V3 备份恢复到另一库后重新升级。旧 CLI 离线数据仍存在，新的 CLI 应先连接 V4 做有效 200。详见 `docs/project/IDENTITY_MIGRATION.md` 和 `docs/project/RUNBOOK.md`。
 - 实包断连演练分别记录代理转发真相、独立 HTTP 当前/历史/revision、MySQL 命令行读回。目标效果存在时停止写入。历史显示曾经保存的值，trace、operator 和 reason 缺乏唯一的持久请求归因。详见同一提交的 `docs/project/WRITE_CONSISTENCY.md` 与 `docs/project/RUNBOOK.md`。
+- 对编号请求，原意图重放返回已存 data 和本次 trace。换操作或正文使用同一编号为 409。每次都重新授权，写入失败可用原编号再试。V5 实包在真实 V4 样本库升级，验证保存成功后断连、零转发、后写覆盖和换进程重放。成功回执持续保留，旧服务会忽略编号，升级需停旧写入者。见 `docs/project/WRITE_RECEIPTS.md`。
 - [对应 GitHub Actions](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml) 按实际交付 SHA 查看 `build-test` 与 MySQL 8.4 的 `mysql-integration`。`CURRENT_STATE.md` 记录源码与验证环境，历史接管记录在 `HISTORY.md`。按 D-011 快进推送并核对远端。
 
 ## 后续进入点
 
-下一份任务根据实际消费者决定是否需要安全重放或唯一归因，并分别审查事务内请求回执和写入前置条件。明确合同后按调用链重构、补诊断并串起单仓演示。跨项目消费、SDK 和前端继续作为候选。详细验收和依赖见 `UPGRADE_ROADMAP.md`。
+下一份任务优先审查架构重构、代码精简与工程交付。沿四条写入链、Watch 与 CLI 梳理职责，以现有兼容与实包场景作为保护网。新增前置条件、回执清理、跨项目消费、SDK 和前端均是候选。详细验收和依赖见 `UPGRADE_ROADMAP.md`。

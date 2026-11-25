@@ -151,6 +151,53 @@ Content-Type: application/json
   "reason": "restore initial rule"
 }
 
+### First numbered write on a fresh database. Response header Idempotency-Replayed: false
+POST {{baseUrl}}/api/configs
+X-API-Key: {{apiKey}}
+X-Trace-Id: receipt-first
+Idempotency-Key: example-receipt-001
+Content-Type: application/json
+
+{"app":"demo-app","env":"dev","key":"receipt.demo","value":"first"}
+
+### Retry the same operation after a lost response. Header true, original data, this attempt's trace
+POST {{baseUrl}}/api/configs
+X-API-Key: {{apiKey}}
+X-Trace-Id: receipt-retry
+Idempotency-Key: example-receipt-001
+Content-Type: application/json
+
+{"env":"dev","app":"demo-app","value":"first","key":"receipt.demo"}
+
+### Reusing that number for a different value produces 409/4091
+POST {{baseUrl}}/api/configs
+X-API-Key: {{apiKey}}
+Idempotency-Key: example-receipt-001
+Content-Type: application/json
+
+{"app":"demo-app","env":"dev","key":"receipt.demo","value":"next"}
+
+### Use a new number for a new write. Its result is v2 on a fresh database
+POST {{baseUrl}}/api/configs
+X-API-Key: {{apiKey}}
+Idempotency-Key: example-receipt-002
+Content-Type: application/json
+
+{"app":"demo-app","env":"dev","key":"receipt.demo","value":"next","expectedVersion":1}
+
+### Restart the V5 server on the same private MySQL test database, then replay v1
+# For an actual dropped response and controlled restart, see the Plan07 runbook rehearsal.
+POST {{baseUrl}}/api/configs
+X-API-Key: {{apiKey}}
+X-Trace-Id: receipt-after-restart
+Idempotency-Key: example-receipt-001
+Content-Type: application/json
+
+{"app":"demo-app","env":"dev","key":"receipt.demo","value":"first"}
+
+### Current state remains v2 after the v1 replay
+GET {{baseUrl}}/api/configs/receipt.demo?app=demo-app&env=dev
+
 ### Health
 GET {{baseUrl}}/actuator/health
 

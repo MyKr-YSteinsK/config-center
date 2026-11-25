@@ -1,6 +1,6 @@
 # config-center 项目交接
 
-本批资料采用 `AI-Workflow-Assets` 的工程项目孵化器，来源版本为 [750c696](https://github.com/MyKr-YSteinsK/ai-workflow-assets/tree/750c69673ccaeac9b5999f3b38b8ebc11abebc24/项目孵化器)。接管基于现有 `MyKr-YSteinsK/config-center` 的 `master`，以 Java 后端简历价值为长期目标。当前单仓具备 CLI Watch 恢复、MySQL 并发写入与断连读回实证，以及精确名称和保留历史的 V4 迁移。[Config-Plan03](https://github.com/MyKr-YSteinsK/config-center/issues/2) · [Config-Plan04](https://github.com/MyKr-YSteinsK/config-center/issues/3) · [Config-Plan05](https://github.com/MyKr-YSteinsK/config-center/issues/4) · [Config-Plan06](https://github.com/MyKr-YSteinsK/config-center/issues/5)
+本批资料采用 `AI-Workflow-Assets` 的工程项目孵化器，来源版本为 [750c696](https://github.com/MyKr-YSteinsK/ai-workflow-assets/tree/750c69673ccaeac9b5999f3b38b8ebc11abebc24/项目孵化器)。接管基于现有 `MyKr-YSteinsK/config-center` 的 `master`，以 Java 后端简历价值为长期目标。当前单仓具备 CLI Watch 恢复、MySQL 并发写入、精确名称迁移，以及断连和重启后可重放的持久回执。[Config-Plan04](https://github.com/MyKr-YSteinsK/config-center/issues/3) · [Config-Plan05](https://github.com/MyKr-YSteinsK/config-center/issues/4) · [Config-Plan06](https://github.com/MyKr-YSteinsK/config-center/issues/5) · [Config-Plan07](https://github.com/MyKr-YSteinsK/config-center/issues/6)
 
 ## 创建 GPT Project
 
@@ -9,7 +9,7 @@
 3. 上传 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) 与 [UPGRADE_ROADMAP.md](UPGRADE_ROADMAP.md)。从仓库的同一提交取得两份文件，把这一提交 SHA 放在新对话的第一条消息里。
 4. 可用下面的启动消息核对 GPT 实际读取的内容。新快照生效后，再处理可能冲突的同名旧附件。
 
-> 接手 MyKr-YSteinsK/config-center，资料版本为 <commit SHA>。先根据 PROJECT_CONTEXT.md 和 UPGRADE_ROADMAP.md，用一段通俗话解释 V4 如何分开名称、怎样保留旧历史。接着结合断连读回证据，比较何时现有历史足够、何时需要唯一请求回执。等我确认后再起草下一轮范围和验收。
+> 接手 MyKr-YSteinsK/config-center，资料版本为 <commit SHA>。先根据 PROJECT_CONTEXT.md 和 UPGRADE_ROADMAP.md，用一段通俗话解释保存成功后回信丢失时如何取回原结果。接着按现行合同审查四条写入链、测试结构和可复演交付，给出优先级。等我确认后再起草下一轮范围和验收。
 
 ## 指令与维护源
 

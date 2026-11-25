@@ -12,7 +12,8 @@
 
 - 维护已有 Java / Maven 入口、API 路径、JSON 字段与错误语义。配置当前行、历史和命名空间 revision 在同一事务内写入，Watch 在提交后唤醒。两类业务历史均追加写入，回滚创建新版本。
 - 名称和写授权按精确字符串匹配。两类历史通过当前对象主键归属，历史里的原拼写用于追溯。升级存量 MySQL 时先做 [V4 预检与归属审查](docs/project/IDENTITY_MIGRATION.md)。演练备份、失败和恢复只用隔离的合成数据。
-- 修改 Watch、客户端重试 / 缓存、JPA / Flyway 或 Compose 时，沿完整调用链核对兼容回归。MySQL V1 至 V4 是已交付迁移。后续 schema 变更从 V5 开始追加。
+- 四个写入入口支持可选请求编号。保存、历史、配置 revision 和成功回执同事务提交，重放前重新授权。备份与恢复保持业务和回执一致。[写入回执合同](docs/project/WRITE_RECEIPTS.md)
+- 修改 Watch、客户端重试 / 缓存、JPA / Flyway 或 Compose 时，沿完整调用链核对兼容回归。MySQL V1 至 V5 是已交付迁移。后续 schema 变更从 V6 开始追加。
 - 运行时保持主机 loopback 边界。真实凭证只存在于私有配置或环境，本地 API key 和诊断接口遵循现有使用范围。保留主 Compose 数据卷，MySQL 测试使用隔离的 `config_center_it`。数据库账户使用专用非 root 用户。
 - 涉及新公开接口或网络暴露、破坏性数据操作、变更既有兼容契约、跨项目写入、发布身份或标签，由用户决定后执行。
 

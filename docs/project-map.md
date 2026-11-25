@@ -46,6 +46,7 @@ config-center/
 │       ├── DECISIONS.md
 │       ├── CURRENT_STATE.md
 │       ├── IDENTITY_MIGRATION.md
+│       ├── WRITE_RECEIPTS.md
 │       ├── RUNBOOK.md
 │       ├── HISTORY.md
 │       └── SUPPORTING_DOCS_MANIFEST.md
@@ -62,6 +63,7 @@ config-center/
 │       │   │   ├── exception/
 │       │   │   ├── metrics/
 │       │   │   ├── migration/
+│       │   │   ├── receipt/
 │       │   │   ├── repository/
 │       │   │   ├── service/
 │       │   │   ├── validation/
@@ -72,9 +74,13 @@ config-center/
 │       │       ├── application-mysql.yml
 │       │       ├── db/migration/V1__init_schema.sql
 │       │       ├── db/migration/V2__add_history_version_unique_constraints.sql
-│       │       └── db/migration/V3__widen_rollback_history_reasons.sql
+│       │       ├── db/migration/V3__widen_rollback_history_reasons.sql
+│       │       └── db/migration/V5__add_write_receipt.sql
 │       └── test/
-│           ├── fixtures/identity_upgrade.py
+│           ├── fixtures/
+│           │   ├── identity_upgrade.py
+│           │   ├── idempotency_replay.py
+│           │   └── write_outcome.py
 │           ├── java/com/example/configcenter/MysqlPersistenceIT.java
 │           └── resources/
 │               ├── application.properties
@@ -287,6 +293,12 @@ Configuration upsert and rollback both require an API Key authorized for the req
 
 Service transactions keep updates, history and configuration revision atomic. The existing-row `expectedVersion` check protects a stale conditional upsert. Unique business keys, unique history versions and JPA optimistic locking protect competing transactions. A translated `CannotAcquireLockException` returns 409/4091 after rollback. For a lost response, separate current and history reads show persisted effects. The caller can use the revision to check configuration progress. [Real HTTP/MySQL evidence and readback procedure](project/WRITE_CONSISTENCY.md)
 
+### Numbered writes
+
+The four POST controllers validate the body and authorize the current exact app/env before calling `IdempotentWrites`. An unnumbered request calls the existing service directly. A numbered request uses the existing JPA transaction manager to check the receipt and claim the unique `(app, env, request_key)` via JDBC. The proxied service joins that transaction and performs its usual write. The original response snapshot is saved before commit. Configuration Watch runs after commit.
+
+A replay has the original business data and its own HTTP trace. A losing claim exits its transaction before checking for the committed receipt. Business conflicts keep their original mapping. The receipt table persists the digest of the typed DTO intent and the versioned original result. Its private data grows with successful numbered writes and belongs in the same consistent backup as the other five tables. [Receipt contract and limits](project/WRITE_RECEIPTS.md)
+
 ### Configuration rollback
 
 Intended behavior:
@@ -415,10 +427,11 @@ See [current verification](project/CURRENT_STATE.md) for the latest tested envir
 
 - V1 creates the five business tables. V2 adds the original history-version unique indexes and V3 widens both history reason columns to `VARCHAR(600) NULL`. Flyway owns `flyway_schema_history`.
 - V4 first checks the five tables and configured grants under the V3 comparison rules. It backfills `owner_id` in both history tables and gives them `UNIQUE(owner_id, version)` lookup indexes. Only current identity and revision identity columns switch to `utf8mb4_0900_bin`. Original history fields and unaffected column definitions remain intact. Ambiguous scope changes require an approved mapping. MySQL DDL can leave partial changes on failure, so the recovery path uses a separate V3 restore. [Migration contract](project/IDENTITY_MIGRATION.md)
+- V5 adds only `write_receipt`. The unique index combines exact `utf8mb4_0900_bin` app/env and a binary request key. The snapshot stores the JSON data and original response instant. H2 creates a compatible table from the receipt entity mapping.
 - Primary keys use MySQL identity columns. Current-row and namespace composite uniqueness and history owner/version uniqueness mirror the JPA annotations.
 - Optimistic-lock columns, string lengths/nullability, `DATETIME(6)` timestamps, 4000-character allowlist JSON columns, and `utf8mb4` are explicit.
 - The two-service Compose runtime uses `mysql:8.4`, named volume `config-center_mysql-data`, MySQL/server healthchecks, internal-only MySQL networking, and a default host binding of `127.0.0.1:8080`. Compose sets `SERVER_ADDRESS=0.0.0.0` for the container-internal listener. `SERVER_BIND_ADDRESS` controls host publication.
-- The `mysql-it` Maven profile uses Failsafe and the dedicated `config_center_it` schema. `MysqlPersistenceIT` verifies fresh V1–V4, repeat migration, schema validation and persisted behavior. `MysqlV2UpgradeIT` checks populated V2→V3→V4 in stages, including the original rows, checksums and 533-unit rollback reasons. `MysqlV4MigrationIT` covers mixed V3 groups and fail-closed preflight. Name identity and write consistency suites exercise real HTTP and independent SQL.
+- The `mysql-it` Maven profile uses Failsafe and the dedicated `config_center_it` schema. `MysqlPersistenceIT` verifies fresh V1–V5, repeat migration, schema validation and persisted behavior. `MysqlV2UpgradeIT` checks populated V2→V3→V4→V5 in stages, including the original rows, checksums and 533-unit rollback reasons. `MysqlV4MigrationIT` targets V4 for mixed V3 groups and fail-closed preflight. `MysqlWriteReceiptIT` exercises real HTTP, independent SQL, conflicts and rollback. The packaged rehearsal proves that receipts survive a process restart with the same MySQL data.
 - `compose.mysql-it.yml` exposes only the isolated test database on loopback port `${MYSQL_IT_PORT:-33306}` when combined with `compose.yml` under project name `config-center-it`; the separate project name also isolates its volume from the persistent development runtime.
 - GitHub Actions keeps the H2 `build-test` job and adds an independent MySQL 8.4 service-container job that executes the same `-Pmysql-it verify` command with per-run credentials and uploads test, application, and database logs on failure.
 - The server image is built from the repository root with Maven Wrapper on Maven 3.9.16/JDK 17, then copies only the executable server JAR into a Java 17 JRE image and runs it as a non-root user.
@@ -454,6 +467,7 @@ The current implementation has these limits.
 - `docs/project/CURRENT_STATE.md`: current identity, verification cutoff, risks, and delivery state
 - `docs/project/RUNBOOK.md`: local operation, data boundaries, and recovery
 - `docs/project/IDENTITY_MIGRATION.md`: exact names and migration behavior
+- `docs/project/WRITE_RECEIPTS.md`: numbered write protocol and receipt retention
 - `docs/project/SUPPORTING_DOCS_MANIFEST.md`: supporting-asset ownership and currentness
 - `docs/project-map.md`: detailed current architecture and behavior
 - `examples.http`: request examples aligned with current authorization and response behavior

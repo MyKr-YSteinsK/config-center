@@ -28,11 +28,54 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 | H2 运行及测试 | `local` 使用内存 `configdb`，重启即重新开始。`test` 使用随机内存库和 `create-drop`，只服务测试。两者均禁用 Flyway。 |
 | 持久 MySQL | 默认 Compose 项目把数据放在 `config-center_mysql-data`，手工 MySQL 则使用用户指定的实例。应用使用专用非 root 账户，Flyway 迁移后由 Hibernate validate。需要跨机保留时，通过私有备份渠道导出和恢复数据库。 |
 | MySQL 测试 | 使用专用 `config_center_it`。Compose 路径用 `compose.mysql-it.yml` 隔离项目和卷，loopback 端口默认 `33306`；独立 MySQL 可使用专用数据目录、loopback 端口和非 root 测试账户。验证前核对实际 URL 与项目名，保持主库数据卷完整。 |
+| 写入回执 | MySQL 的 `write_receipt` 与五张业务表同库，保存编号、摘要与原成功结果。与业务及 Flyway 元数据一并备份和恢复，按配置历史的保密要求保管。 |
 | 本地配置 | 从 [模板](../../.env.example) 创建缺失的 `.env`，实际密码和 API key 通过私有方式恢复。手工运行 MySQL JAR 另外设置 README 列出的必需环境变量。 |
 | 客户端缓存 | `${user.home}/.config-center-client-cache-exact-v1.json`。旧两代文件独立保留，详情见本页客户端切换。缓存可能含配置明文。 |
 | IDE 和构建输出 | `.idea/`、`target/`、Maven 用户缓存位于本地。接管前废旧工作区材料的去向见 [历史整理](HISTORY.md)。 |
 
 直接运行 JAR 由 `SERVER_ADDRESS` 控制监听，默认 `127.0.0.1`。持久 Compose 的 `0.0.0.0` 只在容器内监听，主机侧由 `SERVER_BIND_ADDRESS` 控制并默认为 loopback。Swagger、H2 Console、Actuator 以及实验用 API key 在这个边界内使用。
+
+## Config-Plan07 幂等写入与回执
+
+重试同一笔保存时发送原编号和原请求。原操作成功时，客户端会拿到当时的结果和本次 trace。另发一笔新操作时使用新编号。若响应显示 409 是占位竞争，用原请求再试。编号复用冲突应先核对请求。字段、权限和存储合同见 [写入回执](WRITE_RECEIPTS.md)。
+
+### 测试与实包断连演练
+
+在仓库根使用 JDK 17。准备 `mysqld`、`mysql`、`mysqladmin` 与 Python 3。实包脚本自建一次性 MySQL、合成账号和数据。先构建当前 JAR，再从审查基线重建旧 V4 JAR，输出放在本机 Git 忽略区。
+
+```powershell
+.\mvnw.cmd -q -B clean verify
+$old = (New-Item -ItemType Directory -Force "docs/delete/v4-$([guid]::NewGuid())").FullName
+git archive --format=zip -o "$old/src.zip" 5e1353811cceb76d5effb164342ccf5b9e822f8b -- .mvn mvnw mvnw.cmd pom.xml config-center-server config-center-client
+Expand-Archive -LiteralPath "$old/src.zip" -DestinationPath "$old/src"
+Push-Location "$old/src"
+try { .\mvnw.cmd -q -B -DskipTests package } finally { Pop-Location }
+python -B config-center-server/src/test/fixtures/idempotency_replay.py --baseline-jar "$old/src/config-center-server/target/config-center-server-1.0.0.jar"
+```
+
+日志位于 `docs/delete/Config-Plan07/`。脚本启动旧 JAR 写入真实 V4 样本，比较 V5 升级前后的旧表和迁移记录。代理在收到配置保存和旗标回滚的 HTTP 200 后断开调用方连接。独立 HTTP 与 SQL 读回原提交。另有后写覆盖、相同内容不同编号和零转发对照。重启同一持久库的应用后，旧 key 验证 403，当前获授权 key 取回原结果。已有历史与 revision 保持，已挂起 Watch 走无变化超时。零转发场景的第一次重试才写入。
+
+在另一个独占的 `config_center_it` 设置 [README 的 MySQL 验证环境](../../README.md#persistent-start-mysql--docker-compose)，确保实际认证账号为专用非 root 账户。Failsafe 会清理和重建隔离测试表。
+
+```powershell
+.\mvnw.cmd -q -B -Pmysql-it verify
+Get-Content config-center-server/target/failsafe-reports/*Mysql*IT.txt
+```
+
+用 [examples.http](../../examples.http) 也可手工验证首次写入、同编号重放、冲突和新编号。开始时使用空库与合成 key，按顺序发送请求。运行重启后的示例时保持同一隔离的 MySQL，先停止旧进程再启动当前 JAR。H2 内存库适合即时重放演示。
+
+### V5 切换与恢复
+
+1. 在隔离复本确认实际 catalog、账号、当前 Flyway 版本及备份可恢复。对存量 V3 保持 V4 预检和映射步骤。V4 完整后，V5 执行单条 `CREATE TABLE`，既有五张业务表保持。
+2. 停掉早期构建和其他写入者后，用批准的配置启动当前构建，核对 Flyway 成功记录及 Hibernate validate。V4 首次升级后，预期回执表为空。先用合成编号跑一次写入与重放，再启用依赖该协议的调用方。
+3. 如果升级失败，先在隔离环境读取 `flyway_schema_history` 并核对 `write_receipt` 的实际结构。保留故障现场。使用升级前的一致性备份恢复到独立实例并校验，再选择重试。V5 表变更由 Flyway 管理。上线后回执进入相同的一致性备份。只恢复业务表会丢失重放依据。
+
+```sql
+SELECT version, script, checksum, success FROM flyway_schema_history ORDER BY installed_rank;
+SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='write_receipt';
+```
+
+旧 JAR 会忽略编号。依赖编号的客户端只向支持 V5 协议的服务写入。恢复到旧备份后先核对哪些请求与回执已保全，再恢复这些调用方。
 
 ## Config-Plan06 精确名称与迁移
 
@@ -56,7 +99,7 @@ java -jar $jar --spring.profiles.active=mysql --check-identity-migration "--conf
 java -jar $jar --spring.profiles.active=mysql "--config-center.identity-mapping-file=$mapping"
 ```
 
-`IDENTITY_V4_READY (read only)` 表示映射与检查快照一致。无歧义旧库正常启动可自动迁移，空库会顺序应用 V1–V4。成功后确认 Flyway V4、Hibernate validate、精确读取、历史和 Watch。迁移文件只在执行 V4 时读取，归档检查和审批证据后常规重启可省略映射。生产启动保持既有 loopback 和 API 设置。
+`IDENTITY_V4_READY (read only)` 表示映射与检查快照一致。无歧义旧库正常启动可自动迁移，空库会顺序应用 V1–V5。成功后确认 Flyway V4/V5、Hibernate validate、精确读取、历史和 Watch。映射文件只在执行 V4 时读取，归档检查和审批证据后常规重启可省略映射。正常启动保持既有 loopback 和 API 设置。
 
 ### 合成演练和失败恢复
 

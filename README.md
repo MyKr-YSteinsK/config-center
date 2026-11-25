@@ -9,6 +9,7 @@
 - Feature Flag upsert, bounded history reads, rollback, allowlist, and stable percentage rollout
 - `ETag` / `If-None-Match` configuration reads with HTTP 304
 - Long-poll configuration watch based on a persistent `app + env` namespace revision
+- Optional write identifiers with transactionally stored success receipts for configuration and flag writes
 - API Key authorization for configuration and Feature Flag writes
 - Optimistic-lock conflict handling and consistent HTTP error statuses
 - Java CLI client with retry, circuit breaking, ETag cache, transient-failure fallback, and watch refresh
@@ -101,9 +102,11 @@ docker compose logs --no-color config-center-server
 docker compose logs --no-color mysql
 ```
 
-`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume. Use it only for an authorized reset of development data. A fresh volume applies Flyway V1 through V4.
+`docker compose down` removes containers and the network but preserves MySQL data. `docker compose down -v` also deletes the named volume. Use it only for an authorized reset of development data. A fresh volume applies Flyway V1 through V5.
 
-For an existing V3 volume, stop all writers before starting the V4 server. Back up the database, verify a restore on a separate instance, and run the read-only preflight with the effective write grants. If names have ambiguous owners, the check reports the groups and stops. [V4 upgrade, mapping, and recovery](docs/project/RUNBOOK.md#config-plan06-精确名称与迁移)
+For an existing V3 volume, stop all writers before applying V4. Back up the database, verify a restore on a separate instance, and run the read-only preflight with the effective write grants. If names have ambiguous owners, the check reports the groups and stops. [V4 upgrade, mapping, and recovery](docs/project/RUNBOOK.md#config-plan06-精确名称与迁移)
+
+On a V4 database, stop the old writers before enabling numbered writes. V5 adds the receipt table and preserves the existing schema and data. Use the current server for numbered writes and keep receipts together with business tables in consistent backups. [V5 cutover and rehearsal](docs/project/RUNBOOK.md#config-plan07-幂等写入与回执)
 
 For a manually managed empty MySQL database, grant a dedicated non-root account access to the schema, set the required values, and select `mysql`:
 
@@ -115,9 +118,9 @@ $env:CONFIG_CENTER_API_KEY = "replace-with-local-api-key"
 java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=mysql
 ```
 
-On MySQL, Flyway applies V1 through V4 before Hibernate validates the schema. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY`.
+On MySQL, Flyway applies V1 through V5 before Hibernate validates the schema. The MySQL profile requires a nonblank `CONFIG_CENTER_API_KEY`.
 
-V1 creates the schema, V2 adds history-version uniqueness, and V3 widens the nullable history reasons to `VARCHAR(600)`. The Java V4 migration switches current object and revision identities to `utf8mb4_0900_bin` and links history to the current row ID. It keeps the original history fields. Preserve V1 through V4 and append future migrations from V5. Check the server log for the applied schema version.
+V1 creates the schema, V2 adds history-version uniqueness, and V3 widens the nullable history reasons to `VARCHAR(600)`. Java V4 applies precise identities and links historical snapshots to current row IDs, preserving the original history fields. V5 adds `write_receipt`. Preserve V1 through V5 and append future migrations from V6. Check the server log for the applied schema version.
 
 ```powershell
 docker compose logs --no-color config-center-server | Select-String "Migrating schema|up to date"
@@ -137,7 +140,7 @@ $env:CONFIG_CENTER_API_KEY = "replace-with-MYSQL_API_KEY"
 docker compose -p config-center-it -f compose.yml -f compose.mysql-it.yml down -v
 ```
 
-The `mysql-it` profile uses the disposable `config_center_it` schema. Failsafe covers fresh installation, populated V2-to-V4 upgrade, mixed-name V3 migration, exact identity, and concurrent writes. Upgrade fixtures rebuild the five application tables and Flyway history in the test schema. The normal `clean verify` uses H2 and requires no Docker. [MySQL test and V4 rehearsal commands](docs/project/RUNBOOK.md#config-plan06-精确名称与迁移)
+The `mysql-it` profile uses the disposable `config_center_it` schema. Failsafe covers fresh installation, the populated V2→V3→V4→V5 upgrade, mixed-name migration, exact identity, concurrent writes and receipt rollback. Upgrade fixtures rebuild the test tables and Flyway history in the test schema. The normal `clean verify` uses H2 and requires no Docker. [MySQL tests and real replay rehearsal](docs/project/RUNBOOK.md#config-plan07-幂等写入与回执)
 
 ## Local walkthrough
 
@@ -242,9 +245,15 @@ The recovery window starts on the first recoverable failure in a logical round. 
 
 If two writes start from the same version, the losing write returns HTTP 409. Read the current row and history before choosing whether to submit a new write. `expectedVersion` checks an existing row. Creating a missing row and updating without a version condition remain supported. Configuration writes commit the current row, history and namespace revision together, and Watch signals after commit.
 
-A lost connection after saving leaves the result uncertain. Use a new connection to read the current value and history. History can show that the intended value was saved even when a later write replaced it. Attributing that saved value to one request requires a durable request identity.
+A lost connection on an unnumbered write leaves the result uncertain. Use a new connection to read the current value and history. History can show that the intended value was saved even when a later write replaced it. [Unnumbered write readback](docs/project/RUNBOOK.md#config-plan05-并发与结果读回)
 
 Exact namespaces have separate revisions and Watch waiters. InnoDB may still abort one of two concurrent inserts. The aborted write returns 409 and leaves no partial state. [MySQL concurrency and V3 comparison](docs/project/WRITE_CONSISTENCY.md) · [Reproduce the concurrency and lost-response scenarios](docs/project/RUNBOOK.md#config-plan05-并发与结果读回)
+
+### Retrying a numbered write
+
+All four existing write paths accept the optional `Idempotency-Key` header. Generate a number before sending a new operation and keep it with the original body. Use 1–128 ASCII letters, digits, dots, underscores or hyphens. The exact app/env and the case-sensitive number identify a receipt across all four paths.
+
+The first success returns `Idempotency-Replayed: false`. Retrying the same number and intent returns the original `data` and `Idempotency-Replayed: true`, even if a later write has updated the object. Each response carries the trace for its own HTTP attempt. A number used with a different intent returns 409. Current write authorization applies to every attempt. If claim contention returns 409, retry with the original number and body after checking the response message. Use a new number for a new operation. [HTTP examples](examples.http) · [Receipt contract and retention](docs/project/WRITE_RECEIPTS.md)
 
 ## Public API
 
@@ -311,6 +320,7 @@ The local rate limiter groups requests by source address, HTTP method, and match
 - Rate-limit buckets and long-poll waiters are process-local; multiple server instances do not coordinate them.
 - The client is a demonstration CLI, not a published SDK, and its Java package still uses the legacy name `com.example.democlient`.
 - The cache is a user-home JSON file without encryption or cross-process locking.
+- Successful numbered writes retain one private receipt each. Plan backups for both history and receipts. Replays depend on stored receipts and a server that supports numbered writes.
 - There is no RBAC, multi-tenancy, frontend administration UI, or distributed deployment support.
 
 ## Project documentation
@@ -318,5 +328,6 @@ The local rate limiter groups requests by source address, HTTP method, and match
 - [Architecture map](docs/project-map.md) and [example requests](examples.http)
 - [Current verification](docs/project/CURRENT_STATE.md) and [runbook](docs/project/RUNBOOK.md)
 - [Exact identity and V4 migration](docs/project/IDENTITY_MIGRATION.md)
+- [Numbered writes and durable receipts](docs/project/WRITE_RECEIPTS.md)
 - [Maintainer entry point](AGENTS.md) and [documentation index](docs/project/SUPPORTING_DOCS_MANIFEST.md)
 - [GPT Project setup](docs/项目源文件/00-START_HERE.md) and [proposed upgrade roadmap](docs/项目源文件/UPGRADE_ROADMAP.md)
