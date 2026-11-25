@@ -1,14 +1,16 @@
 # config-center｜接手快照
 
-日期 2026-11-25。适用仓库 `MyKr-YSteinsK/config-center`，分支 `master`。Config-Plan07 审查基线 `5e1353811cceb76d5effb164342ccf5b9e822f8b`。源码和验证证据见同一交付的 `docs/project/CURRENT_STATE.md`。
+日期 2026-11-25。适用仓库 `MyKr-YSteinsK/config-center`，分支 `master`。Config-Plan08 审查基线 `0e65ac86c51e1f05edec5ab52fc85805114636b1`。源码和验证证据见同一交付的 `docs/project/CURRENT_STATE.md`。
 
 ## 目标和阶段
 
-把项目维护成可以凭请求、历史和测试证据讲解的 Java 后端作品。所有者已选择先推进单仓。Config-Plan03 修复 CLI 编码、回滚历史扩列和条件请求。Config-Plan04 使客户端在收到变更却暂时取不到新配置时，先保留待办，等连接恢复后补取。持续失败会明确退出。Config-Plan05 用真实数据库证明同版本竞争只留一笔成功，两个不同键可同时写入。已验证保存成功后断连时可独立核对目标效果，历史的唯一归因仍待决定。[Config-Plan03](https://github.com/MyKr-YSteinsK/config-center/issues/2) · [Config-Plan04](https://github.com/MyKr-YSteinsK/config-center/issues/3) · [Config-Plan05](https://github.com/MyKr-YSteinsK/config-center/issues/4)
+把项目维护成可以凭请求、历史和测试证据讲解的 Java 后端作品。所有者已选择先推进单仓。Config-Plan03 修复 CLI 编码、回滚历史扩列和条件请求。Config-Plan04 使客户端在收到变更却暂时取不到新配置时，先保留待办，等连接恢复后补取。持续失败会明确退出。Config-Plan05 用真实数据库证明同版本竞争只留一笔成功，两个不同键可同时写入。已验证无编号请求保存后断连时可独立核对目标效果。[Config-Plan03](https://github.com/MyKr-YSteinsK/config-center/issues/2) · [Config-Plan04](https://github.com/MyKr-YSteinsK/config-center/issues/3) · [Config-Plan05](https://github.com/MyKr-YSteinsK/config-center/issues/4)
 
 Config-Plan06 统一为精确名称。以前共用同一条数据的不同拼写现在可以分别创建。V4 把旧历史关联到当前行，保留原来的名字和内容，混合 scope 默认停止等待审查。已在隔离 MySQL 验证旧库恢复、再升级与 CLI 新缓存切换。[Config-Plan06](https://github.com/MyKr-YSteinsK/config-center/issues/5)
 
 Config-Plan07 为四种保存和回滚提供可选请求编号。保存、历史、配置 revision 和成功回执一次提交。即使回信丢失或服务重启，获授权的调用方可用原编号和原请求取回当时的结果。无编号调用继续用原流程。[Config-Plan07](https://github.com/MyKr-YSteinsK/config-center/issues/6)
+
+Config-Plan08 整理了四条写入链的内部职责。公共 HTTP 适配负责校验后授权、编号和响应，执行器管理编号事务。两域各有一条保存和追加历史路径，配置服务同时推进 revision 并注册提交后通知。用相同合成输入对照两份实包，新构建接回原 V5 库时取回了四份旧回执的原始结果。[Config-Plan08](https://github.com/MyKr-YSteinsK/config-center/issues/7)
 
 ## 已实现能力
 
@@ -37,8 +39,9 @@ Java 17、Spring Boot 3 和 Maven 双模块入口。保留已有 API 与 envelop
 - 旧库先停止写入、备份并验证恢复，再用实际授权配置运行 `--check-identity-migration`。如需决策，只能在对应旧组中按最新指纹选定已观察且有授权的目标 scope。实测 MySQL 的中途 DDL 失败可留下部分列，按完整 V3 备份恢复到另一库后重新升级。旧 CLI 离线数据仍存在，新的 CLI 应先连接 V4 做有效 200。详见 `docs/project/IDENTITY_MIGRATION.md` 和 `docs/project/RUNBOOK.md`。
 - 实包断连演练分别记录代理转发真相、独立 HTTP 当前/历史/revision、MySQL 命令行读回。目标效果存在时停止写入。历史显示曾经保存的值，trace、operator 和 reason 缺乏唯一的持久请求归因。详见同一提交的 `docs/project/WRITE_CONSISTENCY.md` 与 `docs/project/RUNBOOK.md`。
 - 对编号请求，原意图重放返回已存 data 和本次 trace。换操作或正文使用同一编号为 409。每次都重新授权，写入失败可用原编号再试。V5 实包在真实 V4 样本库升级，验证保存成功后断连、零转发、后写覆盖和换进程重放。成功回执持续保留，旧服务会忽略编号，升级需停旧写入者。见 `docs/project/WRITE_RECEIPTS.md`。
+- Plan08 的实包对照保留原 HTTP 错误顺序、OpenAPI、时间顺序、owner 和数据库版本。切换同一库时，四类旧回执的 `data`（含 Instant）逐字对照，历史行和回执摘要按原值检查。完整回归和操作步骤见 `docs/project/CURRENT_STATE.md` 和 `docs/project/RUNBOOK.md`。
 - [对应 GitHub Actions](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml) 按实际交付 SHA 查看 `build-test` 与 MySQL 8.4 的 `mysql-integration`。`CURRENT_STATE.md` 记录源码与验证环境，历史接管记录在 `HISTORY.md`。按 D-011 快进推送并核对远端。
 
 ## 后续进入点
 
-下一份任务优先审查架构重构、代码精简与工程交付。沿四条写入链、Watch 与 CLI 梳理职责，以现有兼容与实包场景作为保护网。新增前置条件、回执清理、跨项目消费、SDK 和前端均是候选。详细验收和依赖见 `UPGRADE_ROADMAP.md`。
+下一份任务从维护收益出发，先审查异步验证和测试夹具的重复成本，再评估低基数诊断与固定数据集性能基线。Watch 和 CLI 以现有职责与回归作基线，按实际问题考虑局部修改。新增前置条件、回执清理、跨项目消费、SDK 和前端均是候选。详细验收和依赖见 `UPGRADE_ROADMAP.md`。

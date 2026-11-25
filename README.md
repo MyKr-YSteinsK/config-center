@@ -255,6 +255,8 @@ All four existing write paths accept the optional `Idempotency-Key` header. Gene
 
 The first success returns `Idempotency-Replayed: false`. Retrying the same number and intent returns the original `data` and `Idempotency-Replayed: true`, even if a later write has updated the object. Each response carries the trace for its own HTTP attempt. A number used with a different intent returns 409. Current write authorization applies to every attempt. If claim contention returns 409, retry with the original number and body after checking the response message. Use a new number for a new operation. [HTTP examples](examples.http) · [Receipt contract and retention](docs/project/WRITE_RECEIPTS.md)
 
+The four write handlers share a web adapter for authorization, request numbers and response envelopes. Each service uses one persistence path for saves and rollbacks. The packaged rehearsal compares both builds against identical data and replays the baseline's four receipts on the same V5 database. [Write architecture](docs/project-map.md#numbered-writes) · [Compatibility rehearsal](docs/project/RUNBOOK.md#config-plan08-写入调用链对照)
+
 ## Public API
 
 | Method | Path | Write authorization | Purpose |

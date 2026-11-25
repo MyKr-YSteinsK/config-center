@@ -35,6 +35,41 @@ java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.pr
 
 直接运行 JAR 由 `SERVER_ADDRESS` 控制监听，默认 `127.0.0.1`。持久 Compose 的 `0.0.0.0` 只在容器内监听，主机侧由 `SERVER_BIND_ADDRESS` 控制并默认为 loopback。Swagger、H2 Console、Actuator 以及实验用 API key 在这个边界内使用。
 
+## Config-Plan08 写入调用链对照
+
+同一组合成操作分别走旧、新 JAR 的 HTTP 入口。脚本比较实际响应和数据库，并让新 JAR 直接连接旧 JAR 刚写过的 V5 库，重放四类旧回执。其余迁移、并发、故障和 CLI 场景仍可按各节独立复演。
+
+在仓库根准备 JDK 17、Python 3.11+、`mysqld`、`mysql`、`mysqladmin` 和 `mysqldump`。以下命令把两个旧构建放进 Git 忽略区，并用当前工作树的 Maven 产物作候选。合成 V3 样本用于重建含混合拼写历史的 V5 输入。
+
+```powershell
+.\mvnw.cmd -q -B clean verify
+if ($LASTEXITCODE -ne 0) { throw 'Candidate build failed' }
+$bundle = (New-Item -ItemType Directory -Force "docs/delete/plan08-$([guid]::NewGuid())").FullName
+$refs = [ordered]@{
+    baseline = '0e65ac86c51e1f05edec5ab52fc85805114636b1'
+    legacy = '52e887daab5881974ec7d9bf06a707d2110fb378'
+}
+foreach ($entry in $refs.GetEnumerator()) {
+    $archive = Join-Path $bundle "$($entry.Key).zip"
+    $source = Join-Path $bundle $entry.Key
+    git archive --format=zip -o $archive $entry.Value -- .mvn mvnw mvnw.cmd pom.xml compose.yml config-center-server config-center-client
+    if ($LASTEXITCODE -ne 0) { throw 'git archive failed' }
+    Expand-Archive -LiteralPath $archive -DestinationPath $source
+    Push-Location $source
+    try {
+        .\mvnw.cmd -q -B -DskipTests package
+        if ($LASTEXITCODE -ne 0) { throw 'Baseline package failed' }
+    } finally { Pop-Location }
+}
+python -B config-center-server/src/test/fixtures/write_chain_comparison.py `
+  --baseline-jar "$bundle/baseline/config-center-server/target/config-center-server-1.0.0.jar" `
+  --legacy-jar "$bundle/legacy/config-center-server/target/config-center-server-1.0.0.jar"
+```
+
+对照脚本自建独占 `config_center_it` 和专用非 root 账号，使用随机 loopback 端口。它在基线 V5 上造数并保存相同起点的副本，再分别跑前后 HTTP 序列。两次执行中新生成的时间使用同一检查与占位表示，历史时间顺序及 ETag 与快照关系单独校验。行 ID、owner、版本、顺序和摘要直接比较。切换到同一库的重放严格比较原 `data` 字节（含时间）以及六张表和索引。日志、两份 JSON 对照记录和合成备份位于 `docs/delete/Config-Plan08/`。
+
+单独配置 [README 的 MySQL 测试环境](../../README.md#persistent-start-mysql--docker-compose)，可跑 `.\mvnw.cmd -q -B -Pmysql-it verify` 核对锁、回滚和提交后 Watch。真实 CLI 的三次 503、健康读取和 304 用 `python -B config-center-client/src/test/fixtures/watch_recovery.py recover`，精确名称和旧缓存切换已包含在上面的实包对照。
+
 ## Config-Plan07 幂等写入与回执
 
 重试同一笔保存时发送原编号和原请求。原操作成功时，客户端会拿到当时的结果和本次 trace。另发一笔新操作时使用新编号。若响应显示 409 是占位竞争，用原请求再试。编号复用冲突应先核对请求。字段、权限和存储合同见 [写入回执](WRITE_RECEIPTS.md)。

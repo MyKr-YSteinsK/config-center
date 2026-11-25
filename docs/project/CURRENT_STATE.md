@@ -1,5 +1,30 @@
 # 当前状态
 
+## Config-Plan08 · 2026-11-25
+
+保存和回滚原来各写一遍收尾。现在配置和旗标各自共用保存与记录历史的路径，四个接口共用权限和请求头处理。实包对照中，两个版本返回相同的业务结果，新版本也逐字取回了旧版本保存的四份回执。
+
+审查基线 `master@0e65ac86c51e1f05edec5ab52fc85805114636b1`，重构、测试与复演脚本位于 `3cecf15a95302998251e223df1af83b9c964c515`。按最终交付 SHA 查看两项 CI。[Issue #7](https://github.com/MyKr-YSteinsK/config-center/issues/7) · [实现提交](https://github.com/MyKr-YSteinsK/config-center/commit/3cecf15a95302998251e223df1af83b9c964c515) · [CI](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml)
+
+| 验收 | 前后对照与实测 |
+| --- | --- |
+| 结构收益 | 两域各用一个私有 `persistChange`，配置专有的 revision 和提交后通知留在配置服务。共同的版本校验、回滚原因进入 `WriteRules`。四条路由交给一个 HTTP 适配器，编号执行器只管事务、回执和争用后的新事务读回。[前后职责](../project-map.md#numbered-writes) |
+| HTTP 合同 | 在相同 V5 输入的两个隔离库，37 个实际 HTTP/OpenAPI 对照项一致。覆盖校验先于授权、授权先于非法编号、精确名称、403/400/404/409、编号首写及重放、页游标、灰度、ETag、请求 trace 和 Watch。完整 OpenAPI 只归一化随机端口。 |
+| 事务与历史 | 六张表共 29 行，行 ID、owner、业务及锁版本、历史顺序、revision 与回执摘要一致。归一化仅用于各自新生成的时间和由它派生的 ETag，历史顺序及 ETag 对实际快照另行验证。保留原测试的独立 SQL、并发屏障、flush 后中止、争用、成功只通知一次及失败零副作用。 |
+| 旧 V5 原库 | 先用基线 V5 写出四类回执，再停旧进程。候选连接同一库，四份 `data`（含 Instant）逐字节一致。原行、索引、迁移记录和 Watch revision 3 保持。Flyway 验证 5 个版本并报告无需迁移，Hibernate 完成 schema 校验。随后一次新编号写入成功，含旧拼写的两域历史均可正常回滚。 |
+| 真实 CLI 和断连 | Plan04 三次配置 GET 503 后约 5.05 秒发出探测，随后确认游标 2，CLI 退出 0。Plan06 真实 CLI 忽略旧别名缓存，首次精确 GET 200，随后用新验证器取 304，`a+b` 传输正确。Plan07 配置保存及旗标回滚在实际响应丢失、重启后仍返回原结果，零转发对照只写一次。 |
+| 本机全量 | 基线源码与候选均实际执行 `clean verify` 和隔离 `-Pmysql-it verify`，服务端 108、客户端 82、MySQL 46 项，零失败、错误和跳过。候选 MySQL 的编号唯一约束与等待超时分别验证，实际占位等待约 5.01 秒。 |
+
+生产统计覆盖服务端 `src/main/java` 的物理行。相对同一基线，生产 Java 58→60 个文件、3907→3931 行，7 个生产文件涉及改动（+127/−103）。测试及复演单列，3 个文件（+366/−13），保留既有 Java 用例和断言。文档在 7 个现行文件中更新。构建依赖和迁移文件保持原值。以后调整保存收尾、写授权或编号处理时，各有一个共用入口。
+
+Watch、CLI 和读取路径本来已有各自的状态与职责，本轮沿用其实现并用实包回归保护。V5 的意图、编码和 SQL 已有独立文件，保留原实现与序列化合同。
+
+实包 SHA-256 分别为基线 V5 `039927a7d8e28d4dab6577cf6b8c6c04f5e355c49bc97abbfce244a103bd88ac`、候选 V5 `22ec0cf6e1948ec7c0fec51b52e2a08dfb70fd4b08c6840f17122dda1526a805`。混合历史样本来自 V3 实包 `1076e4f4cd4dd8c9c26308031bfea7b09eea6a767c0a0e640e0a1f22d63bb9d7`，其原始拼写和 owner 归属均保留。环境为 Windows、JDK 17.0.12、Maven Wrapper 3.9.16、独立 MySQL 8.0.46，专用非 root `config_center_it`。同一库的两个构建顺序启动。[运行手册与复现](RUNBOOK.md#config-plan08-写入调用链对照)
+
+## 后续工作
+
+优先审查脚本启动和就绪步骤的维护成本，再评估低基数的写入和 Watch 诊断。Watch、CLI 各段已有验证过的等待和恢复职责，按实际故障定位价值决定局部整理。性能先固定数据、并发和引擎，再测历史查询、编号写入与重放以及 Watch 完成时间。[后续优先级与验收](../项目源文件/UPGRADE_ROADMAP.md#待审优先级) · [历史整理](HISTORY.md)
+
 ## Config-Plan07 · 2026-11-25
 
 保存成功但回信丢失后，用原编号和原请求可以取回第一次的结果。旧 V4 JAR 对同一编号重复保存，产生 v1 和 v2。本轮在真实 MySQL 上让代理等到服务端返回成功再断开，随后换进程连接同一库。重试拿到了原结果，历史和 Watch 进度保持。
@@ -21,10 +46,6 @@
 首轮远端 MySQL 的异意图竞争返回约定的 409，测试却要求底层必须是唯一约束冲突。调整后的唯一约束用例先让第二个事务读到空，再等首笔提交才发出第二次 INSERT。另一个用例继续持有首个占位，验证真实锁等待、409 和原编号重放。[首轮 MySQL CI](https://github.com/MyKr-YSteinsK/config-center/actions/runs/45535439211/job/138940777679)
 
 实包基线 V4 JAR SHA-256 为 `f4e5891f3a77dcce81c225e812eebf0e8efe98bc1d5c480de77b917b95afd064`，本轮 V5 JAR SHA-256 为 `ca97fd5d196969dbc3c1b378e744cd332ce8a6fc32e498d2eb579c85c2149cdb`。本机用独立 mysqld、随机 loopback 端口和合成数据。安全重放依赖已提交回执留在与业务一致的持久库，以及所有写入者都支持协议。[写入回执合同](WRITE_RECEIPTS.md) · [复现与切换](RUNBOOK.md#config-plan07-幂等写入与回执)
-
-## 后续工作
-
-优先审查架构、代码精简与工程交付。沿现有调用链先明确职责和可复演证据，再确定重构范围。保留期、新写入前置条件、前端、SDK 与跨项目消费按 [升级路线](../项目源文件/UPGRADE_ROADMAP.md) 单独决定。接管和本机待清理材料见 [历史整理](HISTORY.md)。
 
 ## Config-Plan06 · 2026-11-25
 

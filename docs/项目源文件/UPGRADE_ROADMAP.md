@@ -1,6 +1,6 @@
 # config-center 审查与升级提案
 
-2026-11-25。用户在 [Config-Plan03](https://github.com/MyKr-YSteinsK/config-center/issues/2) 选定单仓 Java 后端为近期主线。已完成 Watch 恢复、真实 MySQL 写入核验、精确名称及依靠持久回执的安全重放。[Config-Plan04](https://github.com/MyKr-YSteinsK/config-center/issues/3) · [Config-Plan05](https://github.com/MyKr-YSteinsK/config-center/issues/4) · [Config-Plan06](https://github.com/MyKr-YSteinsK/config-center/issues/5) · [Config-Plan07](https://github.com/MyKr-YSteinsK/config-center/issues/6)
+2026-11-25。用户在 [Config-Plan03](https://github.com/MyKr-YSteinsK/config-center/issues/2) 选定单仓 Java 后端为近期主线。已完成 Watch 恢复、真实 MySQL 写入核验、精确名称、持久回执和写入链整理。四条 HTTP 写入口和两个域内收尾路径已完成新旧实包对照。[Plan04](https://github.com/MyKr-YSteinsK/config-center/issues/3) · [Plan05](https://github.com/MyKr-YSteinsK/config-center/issues/4) · [Plan06](https://github.com/MyKr-YSteinsK/config-center/issues/5) · [Plan07](https://github.com/MyKr-YSteinsK/config-center/issues/6) · [Plan08](https://github.com/MyKr-YSteinsK/config-center/issues/7)
 
 ## 单仓迭代顺序
 
@@ -11,7 +11,8 @@
 | 已完成 · 写入竞争与 MySQL 一致性 | 已在真实 HTTP/MySQL 核对重叠写入、历史与 revision，并把复现的锁冲突映射为 409。实包响应丢失核对区分当前、历史、效果与归因。[并发与身份矩阵](../project/WRITE_CONSISTENCY.md) |
 | 已完成 · 精确名称与 V4 | 写授权、当前标识、历史归属、Watch 和灰度统一使用精确名称。真实 V3 库演练无映射拒绝、部分 DDL 失败、独立备份恢复与再升级。旧缓存与新 CLI 独立。 [迁移合同](../project/IDENTITY_MIGRATION.md) |
 | 已完成 · V5 写入回执 | 真实 HTTP 的四种写入接受可选编号，成功回执和业务同事务。实包验证断连后用原意图重试、重启同库仍读回原结果。create-only 和回滚版本条件另审。[写入回执](../project/WRITE_RECEIPTS.md) |
-| 下一轮待审 · 架构、代码精简与交付 | 沿 config、flags、watch 与 CLI 读取整理事务、纯决策、协议和持久层职责，优先减少重复协调逻辑和维护证据的成本。用现有兼容测试和实包场景保护每次重构。 |
+| 已完成 · 写入调用链精简 | 每域聚合保存、历史收尾。HTTP 适配集中授权和请求头，回执执行器负责编号事务。旧数据、旧回执及读写协议通过对照。 [前后实测](../project/CURRENT_STATE.md#config-plan08--2026-11-25) |
+| 下一轮待审 · 维护、诊断与性能证据 | 先用已有实包与测试盘点维护成本，再决定是否共享启动辅助和增加低基数诊断。固定合成数据、引擎和负载，记录现有耗时后再评估优化。 |
 | 随后 · 单仓可复演展示 | 用合成数据、实包和 CLI 连起写入、冲突、回滚、稳定灰度与恢复。补 MySQL 重启读回，附可执行命令、源码与 JAR 身份，以同一场景展示后端能力。 |
 
 ACGN 消费者、RunProof、SDK 与轻量发布工作台保留为备选。依赖、产品场景和取舍见文末；启用其中一项需要另行确定范围。
@@ -35,6 +36,14 @@ ACGN 消费者、RunProof、SDK 与轻量发布工作台保留为备选。依赖
 | 中 · 可交付证据 | 现有 CI 分开运行快测和 MySQL。CLI 是 Maven 启动的演示项目。POM 仍用 `1.0.0`，历史标签则指向更早的源码。 | 固定候选构建身份，输出可复查的小场景和一条启动路径。所需交付形式以及版本/标签由用户决定。 |
 
 ## 候选阶段与验证
+
+### 待审优先级
+
+| 优先级 | 现有依据 | 可验证收益 |
+| --- | --- | --- |
+| 1 · 复演和测试夹具 | Watch 的 `LocalServer`、断连脚本的 `server` 与迁移的 `Jars.serving` 分别负责进程启动与就绪。Plan08 复用迁移的 MySQL 生命周期、混合造数、SQL 读回及 CLI 缓存验证。 | 先盘点进程启动、就绪判定和日志收集的重复维护点。只共享同义步骤，保留故障边界和每个独立复现命令。 |
+| 2 · Watch、CLI 与诊断 | Watch 已有等待数、命名空间数和拒绝指标。CLI 的 `WatchSession` 管确认进度，`ReliableHttp` 管单次传输重试，`ConfigClient` 管列表缓存。 | 评估能否用低基数的成功、超时、拒绝与缓存来源分辨真实故障。保留现有 503、304、取消与容量测试。用实际故障收益决定局部重构。 |
+| 3 · 固定数据集性能基线 | MySQL 已覆盖历史游标、回执唯一约束及并发写入，但当前证据主要验证行为。 | 固定 MySQL 版本、数据量、并发及冷热条件，测列表与历史、回执首次写入/重放、revision 锁等待和 Watch 完成时间。按实测瓶颈再提目标。 |
 
 ### 1. 可靠性和后端结构
 
@@ -84,4 +93,4 @@ config-center 已独立实测 **提交后响应丢失**。若需要联动，可�
 
 先用本仓库 CLI 走通可复演场景。可先在简历中陈述已验证的基线，例如「使用 Spring Boot、JPA 和 Flyway 实现配置版本、追加历史与回滚，提供提交后 Watch、ETag 缓存和 H2/MySQL 双路径回归」。后续再按实际证据加上真实消费场景和指标。公开展示可用一张架构图、一个 90 秒操作录屏、一次复现命令和该提交的测试链接。
 
-待用户确定的争议点包括目标岗位、首个消费者、客户端故障的默认策略、回执保留期和操作员授权、以及只做本地展示还是另外设计公开演示。下一份单仓任务先审查架构和交付方式，再确定重构范围和验收。
+待用户确定的争议点包括目标岗位、首个消费者、客户端故障的默认策略、回执保留期和操作员授权、以及只做本地展示还是另外设计公开演示。单仓后续范围按上表的实测维护成本、诊断价值与性能基线决定。

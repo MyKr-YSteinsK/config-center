@@ -80,6 +80,7 @@ config-center/
 │           ├── fixtures/
 │           │   ├── identity_upgrade.py
 │           │   ├── idempotency_replay.py
+│           │   ├── write_chain_comparison.py
 │           │   └── write_outcome.py
 │           ├── java/com/example/configcenter/MysqlPersistenceIT.java
 │           └── resources/
@@ -295,9 +296,18 @@ Service transactions keep updates, history and configuration revision atomic. Th
 
 ### Numbered writes
 
-The four POST controllers validate the body and authorize the current exact app/env before calling `IdempotentWrites`. An unnumbered request calls the existing service directly. A numbered request uses the existing JPA transaction manager to check the receipt and claim the unique `(app, env, request_key)` via JDBC. The proxied service joins that transaction and performs its usual write. The original response snapshot is saved before commit. Configuration Watch runs after commit.
+The four POST controllers keep their routes, validation, DTOs and OpenAPI declarations. After validation, they pass the same request's scope and write to `WriteHttpAdapter`. The adapter checks exact app/env permission before inspecting any request number. It calls the proxied service directly for an unnumbered write, without creating an intent. For a numbered write, it checks the intent's scope, then passes it to `IdempotentWrites`. The adapter builds the response envelope and replay header with the current trace.
 
-A replay has the original business data and its own HTTP trace. A losing claim exits its transaction before checking for the committed receipt. Business conflicts keep their original mapping. The receipt table persists the digest of the typed DTO intent and the versioned original result. Its private data grows with successful numbered writes and belongs in the same consistent backup as the other five tables. [Receipt contract and limits](project/WRITE_RECEIPTS.md)
+| Responsibility | Before Plan08 | Current path |
+| --- | --- | --- |
+| HTTP and authorization | Each controller authorized writes, then the receipt component parsed headers and built responses. | One `WriteHttpAdapter.respond` checks permission, parses headers and creates responses. |
+| Domain persistence | Upsert and rollback each saved current data and history. Config also repeated revision and Watch registration. | One private `persistChange` in each domain saves current data and owner history in order. Only config then advances revision and registers Watch. |
+| Shared write rules | Both services repeated the update-version check and rollback reason formatting. | `WriteRules` applies those two rules. The services own entity fields, timestamps and business version changes. |
+| Transaction ownership | The receipt component also handled HTTP. | `IdempotentWrites.execute` handles the numbered transaction. Both service methods still enter through their Spring proxies, independently for unnumbered writes or joining the numbered transaction. |
+
+The numbered transaction checks the receipt, claims the unique `(app, env, request_key)` via JDBC, runs the business write and saves the response snapshot before commit. The configuration notification runs after commit.
+
+A replay has the original business data and its own HTTP trace. A losing claim exits its transaction before checking for the committed receipt. Business conflicts keep their original mapping. The receipt table persists the digest of the typed DTO intent and the versioned original result. Its private data belongs in the same consistent backup as the other five tables. [Receipt contract and limits](project/WRITE_RECEIPTS.md) · [Source and comparison evidence](project/CURRENT_STATE.md#config-plan08--2026-11-25)
 
 ### Configuration rollback
 
@@ -310,6 +320,7 @@ request
   -> load target history snapshot
   -> copy historical value into current row
   -> increment current business version
+  -> save current row
   -> append ROLLBACK history
   -> advance the persistent app/env namespace revision
   -> after transaction commit, notify watchers
