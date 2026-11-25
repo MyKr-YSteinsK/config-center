@@ -4,8 +4,9 @@
 
 ## 恢复工作
 
-- 先读 [目标与兼容约束](docs/project/PROJECT_BRIEF.md) 和 [当前状态](docs/project/CURRENT_STATE.md)。按任务读取 [决定](docs/project/DECISIONS.md)、[运行手册](docs/project/RUNBOOK.md) 或 [架构地图](docs/project-map.md)。
-- 普通任务可直接在 Codex 执行。正式 GPT Project 交接优先使用已授权的目标仓库 Issue，取得完整正文后核对范围和验收。公开 Issue 只包含可公开信息。项目资料及人工同步入口在 [GPT Project 交接](docs/项目源文件/00-START_HERE.md)。
+- 核对工作区、分支、上游与已有改动。先读 [目标与兼容约束](docs/project/PROJECT_BRIEF.md) 和 [当前状态](docs/project/CURRENT_STATE.md)。按任务读取 [决定](docs/project/DECISIONS.md)、[运行手册](docs/project/RUNBOOK.md) 或 [架构地图](docs/project-map.md)。
+- 普通任务可直接执行。正式交接优先读取获授权的目标仓库 Issue 完整正文，核对来源、适用基线、写入与操作权限、必要验收。Issue 读不到时，使用用户提供的可读完整正文或获授权的私有文件。仍缺必要依据时，只暂停依赖该依据的动作。[交接约定](docs/project/DECISIONS.md#交接与恢复) · [GPT Project 同步](docs/项目源文件/00-START_HERE.md)
+- 多任务汇合时，按有效来源、编号及适用修订核对依赖、重叠写入和共享资源。可共用的核验做一次，证据分别对应各任务的验收。实质冲突只暂停受影响的动作。
 - 在授权内自主实施和验证，实质状态与长期决定写回各自文件。后续升级以 [待审提案](docs/项目源文件/UPGRADE_ROADMAP.md) 为入口，由用户选择后单独实施。`docs/delete/` 是本机待清理区。
 
 ## 兼容与数据边界
@@ -21,9 +22,10 @@
 
 - 在规划、预览路线、下发 Plan 和开始执行时，先用一段通俗话说清遇到的问题、准备改什么，以及使用上会有什么变化。
 - 结束时先说明实际改善、遇到的限制和能证明结果的场景，再给验收、技术细节、提交和复现命令。通俗说明以实际验证结果为准。
+- 方向已明确且即将开始下一轮规划、实施或关键审查时，读取上游规则或已确认的同源快照，按需在对话末尾建议一次，用户选择档位。暂时读不到时按已核实的合同继续。建议留在对话里。[模型建议规则](https://github.com/MyKr-YSteinsK/ai-workflow-assets/blob/f50e2b1682af21842a730f20c8533cbc3372a72f/skills/frugal-dev-runner/references/model-recommendation.md)
 
 ## 验证与同步
 
 - 使用 JDK 17 与 Maven Wrapper。`./mvnw -q -B clean verify` 运行两个模块的 H2/客户端测试。涉及 MySQL 的改动用独立数据库执行 `./mvnw -q -B -Pmysql-it verify` 或核对对应的远端 CI。Windows 用 `.\mvnw.cmd`。细节见 [运行手册](docs/project/RUNBOOK.md)。
-- 正常开发任务按 D-011，在必要验收及 diff、凭证、迁移、版本检查后提交，并快进推送到当前分支已配置上游。核对实际远端 SHA。没有上游、非快进或认证/网络受阻时，报告该交付缺口。创建其他远端分支、改 remote、强推、改写历史、移标签及部署/发布须单独授权。
+- 正常开发任务按 D-011，在必要验收及 diff、凭证、迁移、版本检查后提交，并快进推送到当前分支已配置上游。核对实际远端 SHA。没有上游、非快进或认证/网络受阻时，报告该交付缺口。创建其他远端分支、改 remote、强推、改写历史、合并、变更版本或标签及部署或发布须单独授权。
 - 回执给出关键变更、实际验收、提交 SHA、推送目标与本地/远端同步状态。

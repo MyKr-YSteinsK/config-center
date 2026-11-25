@@ -4,6 +4,8 @@
 
 ## 单仓迭代顺序
 
+本路线随 Config-Plan10 整理。最近的运行证据为 Plan09 交付 `db32187e02bf64e56826ae8ef1d6791be6943e34`，其审查基线为 `44b4bb60a13d90bfb2cb4967336bdfde96a52382`。Plan09 的复演环境、限制和 CI 可从固定提交追溯。下表待审项由用户选定范围。 [Plan09 证据](https://github.com/MyKr-YSteinsK/config-center/blob/db32187e02bf64e56826ae8ef1d6791be6943e34/docs/project/CURRENT_STATE.md#config-plan09--2026-11-25) · [当前状态](../project/CURRENT_STATE.md) · [决定](../project/DECISIONS.md) · [运行手册](../project/RUNBOOK.md)
+
 | 顺序 | 范围和验收 |
 | --- | --- |
 | 首轮已完成 | 三条 CLI 请求链经真实 HTTP 验证；两类回滚保留满长原因，V2 旧库真实升级；有数据和空列表均支持条件请求。构建与运行证据见 [当前状态](../project/CURRENT_STATE.md)。 |

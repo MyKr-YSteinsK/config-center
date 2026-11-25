@@ -1,6 +1,6 @@
 # config-center｜接手快照
 
-日期 2026-11-25。适用仓库 `MyKr-YSteinsK/config-center`，分支 `master`。Config-Plan09 审查基线 `44b4bb60a13d90bfb2cb4967336bdfde96a52382`。源码和验证证据见同一交付的 `docs/project/CURRENT_STATE.md`。
+日期 2026-11-25。适用仓库 `MyKr-YSteinsK/config-center`，分支 `master`。本快照随 Config-Plan10 更新，附件版本以三份源文件实际取用的同一提交 SHA 为准。Plan09 审查基线为 `44b4bb60a13d90bfb2cb4967336bdfde96a52382`，运行证据交付于 `db32187e02bf64e56826ae8ef1d6791be6943e34`。 [Plan09 运行证据](https://github.com/MyKr-YSteinsK/config-center/blob/db32187e02bf64e56826ae8ef1d6791be6943e34/docs/project/CURRENT_STATE.md#config-plan09--2026-11-25)
 
 ## 目标和阶段
 
@@ -31,8 +31,10 @@ Java 17、Spring Boot 3 和 Maven 双模块入口。保留已有 API 与 envelop
 
 ## 运行、核验和恢复
 
-- 在仓库根用 JDK 17 和 Maven Wrapper，Windows 为 `.\mvnw.cmd -q -B clean verify`，Unix 为 `./mvnw -q -B clean verify`。H2 不依赖 Docker。Config-Plan06 使用 JDK 17.0.12、Maven Wrapper 3.9.16 与独立的 MySQL 8.0.46。
-- H2 启动使用 `java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=local`，默认 `127.0.0.1:8080`。详细命令、数据归属和隔离 MySQL 步骤在仓库 README 和 `docs/project/RUNBOOK.md`。
+Plan09 在 Windows x64、JDK 17.0.12、Maven Wrapper 3.9.16、Python 3.14.6 和原生 MySQL 8.0.46 上核对实包。7 项进程回归及原命令复演通过。本机 H2、客户端和 MySQL 分别执行 108、82 和 46 项，交付提交的 MySQL CI 使用 8.4.13。就绪判定依赖端口日志和当时的进程存活检查，Windows 强制停止分支用替身验证。 [具体证据与限制](../project/CURRENT_STATE.md#config-plan09--2026-11-25) · [Plan09 CI](https://github.com/MyKr-YSteinsK/config-center/actions/runs/45574357750)
+
+- 在仓库根用 JDK 17 和 Maven Wrapper，Windows 为 `.\mvnw.cmd -q -B clean verify`，Unix 为 `./mvnw -q -B clean verify`。H2 快测可直接运行。
+- H2 启动使用 `java -jar config-center-server/target/config-center-server-1.0.0.jar --spring.profiles.active=local`，默认 `127.0.0.1:8080`。MySQL 用独占 loopback `config_center_it` 和专用非 root 账号。 [命令与数据边界](../project/RUNBOOK.md)
 - Config-Plan03 已在本机独立 MySQL 8.0.46 使用 `config_center_it` 与非 root 账户。`-Pmysql-it verify` 跑过 6 项常规持久层及 1 项真实 V2 升级测试，旧行、唯一性、revision 和校验和保全，两列 `VARCHAR(600) NULL` 可容纳两种回滚的 533 长度历史表示。旧 `b546f7b` 构建也能在 V3 上启动并读写两类历史。
 - Config-Plan03 的 loopback 实包验证满长回滚、空/非空列表的 `*` 以及加号白名单。CLI 与直接 HTTP 同样返回 `userId=a+b`、`enabled=true`、`bucket=-1`，二次读取命中 304。本机 JAR SHA-256 为 `47bb894d97177602c48ad68b78217fb15a4152f262d6b9ae71d6f582c51781bd`。
 - Config-Plan04 用本机 H2 实包与真实 Java CLI 验证一次写入、503、断路器开放、自动补取并从新游标订阅；验证 H2 重启后读取空列表再追上写入，以及持续 503、拒绝连接和无响应在有界调度后失败退出。复现见 `docs/project/RUNBOOK.md`。
@@ -43,8 +45,8 @@ Java 17、Spring Boot 3 和 Maven 双模块入口。保留已有 API 与 envelop
 - 对编号请求，原意图重放返回已存 data 和本次 trace。换操作或正文使用同一编号为 409。每次都重新授权，写入失败可用原编号再试。V5 实包在真实 V4 样本库升级，验证保存成功后断连、零转发、后写覆盖和换进程重放。成功回执持续保留，旧服务会忽略编号，升级需停旧写入者。见 `docs/project/WRITE_RECEIPTS.md`。
 - Plan08 的实包对照保留原 HTTP 错误顺序、OpenAPI、时间顺序、owner 和数据库版本。切换同一库时，四类旧回执的 `data`（含 Instant）逐字对照，历史行和回执摘要按原值检查。完整回归和操作步骤见 `docs/project/CURRENT_STATE.md` 和 `docs/project/RUNBOOK.md`。
 - Plan09 用可控子进程重现已退出误判、存活无端口超时及场景中断。用原命令复跑 Watch 五个 CLI 场景、两种断连读回、V3 迁移、V4/V5 重放与写入链对照。每次启动仍写自己的日志，独占 MySQL 中的活动以实际 SQL 认证与读回确认。命令和环境见 `docs/project/RUNBOOK.md` 的 Plan09 一节。
-- [对应 GitHub Actions](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml) 按实际交付 SHA 查看 `build-test` 与 MySQL 8.4 的 `mysql-integration`。`CURRENT_STATE.md` 记录源码与验证环境，历史接管记录在 `HISTORY.md`。按 D-011 快进推送并核对远端。
+- GitHub Actions 按实际交付 SHA 查询 `build-test` 与 `mysql-integration`。现行文档分别维护运行证据、长期规则和复现步骤。 [当前状态](../project/CURRENT_STATE.md) · [决定与 D-011](../project/DECISIONS.md) · [运行手册](../project/RUNBOOK.md) · [CI](https://github.com/MyKr-YSteinsK/config-center/actions/workflows/ci.yml)
 
 ## 后续进入点
 
-后续可评估低基数诊断与固定数据集性能基线。Watch、CLI 和复演夹具以现有职责与回归作基线，按实际问题考虑局部修改。新增前置条件、回执清理、跨项目消费、SDK 和前端均是候选。详细验收和依赖见 `UPGRADE_ROADMAP.md`。
+后续可评估低基数诊断与固定数据集性能基线。Watch、CLI 和复演夹具以现有职责与回归作基线，按实际问题考虑局部修改。新增前置条件、回执清理、跨项目消费、SDK 和前端均是候选。 [待审优先级](UPGRADE_ROADMAP.md#待审优先级)
